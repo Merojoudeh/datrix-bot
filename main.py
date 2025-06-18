@@ -218,6 +218,9 @@ async def set_file_info(update, context):
 
 async def update_config(update, context):
     """Update bot configuration (Admin only)"""
+    # FIXED: Move global declaration to the top of the function
+    global ADMIN_CHAT_ID, STORAGE_CHANNEL_ID, CONFIG
+    
     user_id = str(update.effective_user.id)
     if user_id != ADMIN_CHAT_ID:
         await update.message.reply_text("⛔ **Admin access required.**", parse_mode='Markdown')
@@ -237,8 +240,6 @@ async def update_config(update, context):
     try:
         key = context.args[0].lower()
         value = context.args[1]
-        
-        global ADMIN_CHAT_ID, STORAGE_CHANNEL_ID, CONFIG
         
         if key == 'admin_id':
             CONFIG['ADMIN_CHAT_ID'] = value
@@ -275,7 +276,7 @@ async def status(update, context):
         status_msg = f"""🟢 **DATRIX Bot Status**
 
 ✅ **Status:** Online and Running
-🌐 **Server:** Render Cloud Platform  
+🌐 **Server:** Cloud Platform  
 ⏰ **Current Time:** `{uptime}`
 🔄 **Auto-Restart:** Enabled
 📊 **Files Available:** {len([f for f in STORED_FILES.values() if f['message_id']])}
@@ -313,7 +314,6 @@ async def help_command(update, context):
 
 **Configuration:**
 • `/update_config [key] [value]` - Update bot settings
-• `/get_channel_info` - Show storage channel details
 
 **Monitoring:**
 • `/status` - Detailed bot status
