@@ -704,6 +704,117 @@ async def api_report_error(update, context):
         error_response = {"status": "error", "message": str(e)}
         await update.message.reply_text(f"API_RESPONSE: {json.dumps(error_response)}")
 
+async def api_check_license(update, context):
+    """API: Check license status for a Google Sheet ID"""
+    try:
+        if not context.args:
+            response = {"status": "error", "message": "Usage: /api_license [sheet_id]"}
+            await update.message.reply_text(f"API_RESPONSE: {json.dumps(response)}")
+            return
+        
+        sheet_id = context.args[0]
+        load_users()
+        
+        # Find user with this sheet ID
+        user_found = None
+        for user_id, user_data in app_users_data.items():
+            if user_data.get('googleSheetId') == sheet_id:
+                user_found = user_data
+                break
+        
+        if user_found:
+            license_status = user_found.get('license_status', 'inactive')
+            license_expires = user_found.get('license_expires', 'N/A')
+            
+            response = {
+                "status": "success",
+                "license_status": license_status,
+                "license_expires": license_expires,
+                "user_name": user_found.get('name', 'Unknown'),
+                "company": user_found.get('company', 'Unknown'),
+                "last_updated": user_found.get('last_seen', datetime.now().isoformat())
+            }
+            
+            # Update last seen
+            user_found['last_seen'] = datetime.now().isoformat()
+            save_users()
+            
+        else:
+            response = {
+                "status": "not_found",
+                "message": f"No user found with Sheet ID: {sheet_id}",
+                "license_status": "inactive",
+                "license_expires": "N/A"
+            }
+        
+        await update.message.reply_text(f"API_RESPONSE: {json.dumps(response)}")
+        logger.info(f"License check for {sheet_id}: {response.get('license_status', 'not_found')}")
+        
+    except Exception as e:
+        error_response = {"status": "error", "message": str(e)}
+        await update.message.reply_text(f"API_RESPONSE: {json.dumps(error_response)}")
+
+async def api_activate_license(update, context):
+    """API: Activate license (for testing purposes)"""
+    try:
+        if len(context.args) < 2:
+            response = {"status": "error", "message": "Usage: /api_activate [sheet_id] [days]"}
+            await update.message.reply_text(f"API_RESPONSE: {json.dumps(response)}")
+            return
+        
+        sheet_id = context.args[0]
+        days = int(context.args[1])
+        
+        load_users()
+        
+        # Find user with this sheet ID
+        user_found = None
+        for user_id, user_data in app_users_data.items():
+            if user_data.get('googleSheetId') == sheet_id:
+                user_found = user_data
+                break
+        
+        if user_found:
+            # Calculate expiry date
+            expiry_date = (datetime.now() + timedelta(days=days)).strftime('%Y-%m-%d')
+            
+            # Update license
+            user_found['license_status'] = 'active'
+            user_found['license_expires'] = expiry_date
+            user_found['last_seen'] = datetime.now().isoformat()
+            save_users()
+            
+            response = {
+                "status": "success",
+                "message": "License activated successfully",
+                "license_status": "active",
+                "license_expires": expiry_date,
+                "activated_for_days": days
+            }
+            
+            # Notify admin
+            await context.bot.send_message(
+                chat_id=ADMIN_ID,
+                text=f"🔑 **License Activated via API**\n\n"
+                     f"👤 **User:** {user_found.get('name', 'Unknown')}\n"
+                     f"📊 **Sheet ID:** {sheet_id}\n"
+                     f"📅 **Expires:** {expiry_date}\n"
+                     f"⏰ **Duration:** {days} days",
+                parse_mode='Markdown'
+            )
+            
+        else:
+            response = {
+                "status": "not_found",
+                "message": f"No user found with Sheet ID: {sheet_id}"
+            }
+        
+        await update.message.reply_text(f"API_RESPONSE: {json.dumps(response)}")
+        
+    except Exception as e:
+        error_response = {"status": "error", "message": str(e)}
+        await update.message.reply_text(f"API_RESPONSE: {json.dumps(error_response)}")
+        
 async def request_license_activation(update, context):
     """Send a license activation request with buttons"""
     try:
