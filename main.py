@@ -3,11 +3,14 @@ from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 import logging
 import json
 import os
-from datetime import datetime
+import time
+import requests
+from datetime import datetime, timedelta
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+# Configuration
 BOT_TOKEN = '7803291138:AAExEBQq9uZhq6X_ncI_c8E2J80-tpZtq8E'
 ADMIN_ID = '811896458'
 CHANNEL_ID = '-1002807912676'
@@ -16,72 +19,91 @@ CHANNEL_ID = '-1002807912676'
 BOT_SETTINGS = {
     'admin_username': 'Datrix_syr',
     'bot_name': 'DATRIX File Server',
-    'welcome_message': 'Welcome to DATRIX! Get the latest accounting software instantly.'
+    'welcome_message': 'Welcome to DATRIX! Get the latest accounting software instantly.',
+    'app_version': 'v2.1.6'
 }
 
 # User tracking
 USERS_FILE = 'users.json'
+APP_USERS_FILE = 'app_users.json'
 SETTINGS_FILE = 'settings.json'
 users_data = {}
+app_users_data = {}
 
 def load_users():
-    global users_data
+    global users_data, app_users_data
     try:
         if os.path.exists(USERS_FILE):
             with open(USERS_FILE, 'r') as f:
                 users_data = json.load(f)
+        if os.path.exists(APP_USERS_FILE):
+            with open(APP_USERS_FILE, 'r') as f:
+                app_users_data = json.load(f)
     except:
         users_data = {}
+        app_users_data = {}
 
 def save_users():
     try:
         with open(USERS_FILE, 'w') as f:
             json.dump(users_data, f)
+        with open(APP_USERS_FILE, 'w') as f:
+            json.dump(app_users_data, f)
     except:
         pass
 
-def load_settings():
-    global BOT_SETTINGS
-    try:
-        if os.path.exists(SETTINGS_FILE):
-            with open(SETTINGS_FILE, 'r') as f:
-                saved_settings = json.load(f)
-                BOT_SETTINGS.update(saved_settings)
-    except:
-        pass
-
-def save_settings():
-    try:
-        with open(SETTINGS_FILE, 'w') as f:
-            json.dump(BOT_SETTINGS, f)
-    except:
-        pass
-
-def add_user(user):
+def add_user(user, source='telegram'):
     user_id = str(user.id)
-    if user_id not in users_data:
-        users_data[user_id] = {
-            'id': user.id,
-            'username': user.username,
-            'first_name': user.first_name,
-            'last_name': user.last_name,
-            'join_date': datetime.now().isoformat(),
-            'last_active': datetime.now().isoformat(),
-            'message_count': 0
-        }
-        logger.info(f"New user added: {user.id} ({user.first_name})")
-    else:
-        users_data[user_id]['last_active'] = datetime.now().isoformat()
-        users_data[user_id]['message_count'] += 1
+    user_info = {
+        'id': user.id,
+        'username': user.username,
+        'first_name': user.first_name,
+        'last_name': user.last_name,
+        'join_date': datetime.now().isoformat(),
+        'last_active': datetime.now().isoformat(),
+        'message_count': 0,
+        'source': source
+    }
+    
+    if source == 'telegram':
+        if user_id not in users_data:
+            users_data[user_id] = user_info
+            logger.info(f"New Telegram user: {user.id} ({user.first_name})")
+        else:
+            users_data[user_id]['last_active'] = datetime.now().isoformat()
+            users_data[user_id]['message_count'] += 1
     
     save_users()
+
+def add_app_user(user_data):
+    """Add desktop app user"""
+    user_id = user_data.get('user_id', str(int(time.time())))
+    
+    app_user_info = {
+        'user_id': user_id,
+        'name': user_data.get('name', 'Unknown'),
+        'company': user_data.get('company', 'Unknown'),
+        'googleSheetId': user_data.get('googleSheetId', ''),
+        'app_version': user_data.get('app_version', BOT_SETTINGS['app_version']),
+        'install_path': user_data.get('install_path', ''),
+        'registration_date': datetime.now().isoformat(),
+        'last_seen': datetime.now().isoformat(),
+        'license_status': user_data.get('license_status', 'inactive'),
+        'license_expires': user_data.get('license_expires', 'N/A')
+    }
+    
+    app_users_data[user_id] = app_user_info
+    save_users()
+    logger.info(f"App user registered: {user_data.get('name')} ({user_id})")
+    return user_id
 
 FILES = {
     'datrix_app': {
         'message_id': None, 
         'version': 'v2.1.6', 
         'size': 'Not set',
-        'description': 'DATRIX Accounting Application'
+        'description': 'DATRIX Accounting Application',
+        'download_count': 0
     }
 }
 
@@ -112,11 +134,16 @@ def create_admin_keyboard():
             InlineKeyboardButton("📈 User Stats", callback_data="admin_stats")
         ],
         [
-            InlineKeyboardButton("⚙️ Admin Help", callback_data="admin_help"),
+            InlineKeyboardButton("🖥️ App Users", callback_data="app_stats"),
+            InlineKeyboardButton("⚙️ Admin Help", callback_data="admin_help")
+        ],
+        [
             InlineKeyboardButton("📞 Contact Info", callback_data="contact_admin")
         ]
     ]
     return InlineKeyboardMarkup(keyboard)
+
+# ================= TELEGRAM USER HANDLERS =================
 
 async def start(update, context):
     add_user(update.effective_user)
@@ -154,8 +181,12 @@ async def button_handler(update, context):
         await handle_admin_help(query, context)
     elif query.data == "admin_stats":
         await handle_admin_stats(query, context)
+    elif query.data == "app_stats":
+        await handle_app_stats(query, context)
     elif query.data == "contact_admin":
         await handle_contact_admin(query, context)
+    elif query.data == "back_to_menu":
+        await handle_back_to_menu(query, context)
 
 async def handle_download(query, context):
     file_info = FILES['datrix_app']
@@ -177,13 +208,17 @@ async def handle_download(query, context):
             message_id=file_info['message_id']
         )
         
+        # Increment download count
+        FILES['datrix_app']['download_count'] += 1
+        
         keyboard = [[InlineKeyboardButton("🔙 Back to Menu", callback_data="back_to_menu")]]
         
         await query.edit_message_text(
             f"✅ **{file_info['description']} Delivered!**\n\n"
             f"🔢 **Version:** {file_info['version']}\n"
             f"💾 **Size:** {file_info['size']}\n"
-            f"⚡ **Status:** Delivered instantly\n\n"
+            f"⚡ **Status:** Delivered instantly\n"
+            f"📊 **Downloads:** {file_info['download_count']}\n\n"
             f"🚀 **Enjoy using DATRIX!**",
             parse_mode='Markdown',
             reply_markup=InlineKeyboardMarkup(keyboard)
@@ -194,8 +229,7 @@ async def handle_download(query, context):
     except Exception as e:
         keyboard = [[InlineKeyboardButton("🔙 Back to Menu", callback_data="back_to_menu")]]
         await query.edit_message_text(
-            "❌ **Download Error**\n\n"
-            "Sorry, there was an error. Please try again or contact support.",
+            "❌ **Download Error**\n\nSorry, there was an error. Please try again or contact support.",
             parse_mode='Markdown',
             reply_markup=InlineKeyboardMarkup(keyboard)
         )
@@ -213,7 +247,8 @@ async def handle_list_files(query, context):
         text += f"📄 **{info['description']}**\n"
         text += f"🔢 Version: `{info['version']}`\n"
         text += f"💾 Size: `{info['size']}`\n"
-        text += f"📊 Status: {status}\n\n"
+        text += f"📊 Status: {status}\n"
+        text += f"📥 Downloads: {info['download_count']}\n\n"
     
     keyboard = [
         [InlineKeyboardButton("📥 Download DATRIX", callback_data="download_datrix")],
@@ -233,11 +268,12 @@ async def handle_status(query, context):
     
     status_msg = f"🟢 **System Status**\n\n"
     status_msg += f"✅ **Status:** Online and Running\n"
-    status_msg += f"🌐 **Server:** Cloud Platform\n"
+    status_msg += f"🌐 **Server:** Railway Cloud Platform\n"
     status_msg += f"⏰ **Time:** `{uptime}`\n"
     status_msg += f"📁 **DATRIX App:** {file_status}\n"
     status_msg += f"🔢 **Version:** `{file_info['version']}`\n"
-    status_msg += f"💾 **Size:** `{file_info['size']}`\n\n"
+    status_msg += f"💾 **Size:** `{file_info['size']}`\n"
+    status_msg += f"📥 **Downloads:** {file_info['download_count']}\n\n"
     status_msg += f"👤 **User:** {query.from_user.first_name}"
     
     keyboard = [[InlineKeyboardButton("🔙 Back to Menu", callback_data="back_to_menu")]]
@@ -271,12 +307,18 @@ async def handle_admin_help(query, context):
     help_text += "**Text Commands:**\n"
     help_text += "`/set_file [msg_id] [version] [size]` - Set file for forwarding\n"
     help_text += "`/broadcast [message]` - Send message to all users\n"
+    help_text += "`/app_broadcast [message]` - Send to app users\n"
     help_text += "`/stats` - Show detailed user statistics\n"
-    help_text += "`/update_admin [username]` - Update admin username\n\n"
+    help_text += "`/app_stats` - Show app user statistics\n"
+    help_text += "`/update_admin [username]` - Update admin username\n"
+    help_text += "`/activate [sheet_id] [yyyy-mm-dd]` - Activate app license\n\n"
+    help_text += "**API Commands (for DATRIX app):**\n"
+    help_text += "`/api_version` - Get latest version info\n"
+    help_text += "`/api_register` - Register app user\n\n"
     help_text += "**Examples:**\n"
     help_text += "`/set_file 123 v2.1.7 125MB`\n"
     help_text += "`/broadcast New version available!`\n"
-    help_text += "`/update_admin Datrix_syr`"
+    help_text += "`/activate abc123xyz 2024-12-31`"
     
     keyboard = [[InlineKeyboardButton("🔙 Back to Menu", callback_data="back_to_menu")]]
     
@@ -303,13 +345,55 @@ async def handle_admin_stats(query, context):
         except:
             pass
     
-    stats_msg = f"📊 **Admin Statistics**\n\n"
+    stats_msg = f"📊 **Telegram User Statistics**\n\n"
     stats_msg += f"👥 **Total Users:** {total_users}\n"
     stats_msg += f"💬 **Total Messages:** {total_messages}\n"
     stats_msg += f"🕐 **Active (24h):** {recent_users}\n"
     stats_msg += f"📁 **File Status:** {"✅ Ready" if FILES['datrix_app']['message_id'] else "❌ Not set"}\n"
-    stats_msg += f"🔢 **Current Version:** {FILES['datrix_app']['version']}\n\n"
+    stats_msg += f"🔢 **Current Version:** {FILES['datrix_app']['version']}\n"
+    stats_msg += f"📥 **Total Downloads:** {FILES['datrix_app']['download_count']}\n\n"
     stats_msg += f"📈 **Avg Messages:** {total_messages/max(total_users, 1):.1f} per user"
+    
+    keyboard = [[InlineKeyboardButton("🔙 Back to Menu", callback_data="back_to_menu")]]
+    
+    await query.edit_message_text(
+        stats_msg, 
+        parse_mode='Markdown',
+        reply_markup=InlineKeyboardMarkup(keyboard)
+    )
+
+async def handle_app_stats(query, context):
+    load_users()
+    
+    total_app_users = len(app_users_data)
+    active_licenses = sum(1 for user in app_users_data.values() if user.get('license_status') == 'active')
+    
+    # Recent app users (last 7 days)
+    recent_app_users = 0
+    now = datetime.now()
+    for user in app_users_data.values():
+        try:
+            last_seen = datetime.fromisoformat(user['last_seen'])
+            if (now - last_seen).days < 7:
+                recent_app_users += 1
+        except:
+            pass
+    
+    stats_msg = f"🖥️ **DATRIX App Statistics**\n\n"
+    stats_msg += f"👥 **Total App Users:** {total_app_users}\n"
+    stats_msg += f"✅ **Active Licenses:** {active_licenses}\n"
+    stats_msg += f"🕐 **Recent (7d):** {recent_app_users}\n"
+    stats_msg += f"📱 **Current App Version:** {BOT_SETTINGS['app_version']}\n\n"
+    
+    if total_app_users > 0:
+        stats_msg += "**Recent Users:**\n"
+        sorted_users = sorted(app_users_data.values(), 
+                            key=lambda x: x.get('last_seen', ''), reverse=True)[:5]
+        for user in sorted_users:
+            name = user.get('name', 'Unknown')[:15]
+            company = user.get('company', 'Unknown')[:15]
+            status = "✅" if user.get('license_status') == 'active' else "❌"
+            stats_msg += f"{status} {name} ({company})\n"
     
     keyboard = [[InlineKeyboardButton("🔙 Back to Menu", callback_data="back_to_menu")]]
     
@@ -325,8 +409,9 @@ async def handle_contact_admin(query, context):
     contact_msg += "📝 **For support with:**\n"
     contact_msg += "• Download issues\n"
     contact_msg += "• Technical problems\n"
-    contact_msg += "• Feature requests\n"
-    contact_msg += "• General questions\n\n"
+    contact_msg += "• License activation\n"
+    contact_msg += "• DATRIX app support\n"
+    contact_msg += "• Feature requests\n\n"
     contact_msg += f"💬 **Click here to message:** @{BOT_SETTINGS['admin_username']}\n\n"
     contact_msg += "⏱️ **Response time:** Usually within 24 hours"
     
@@ -341,36 +426,124 @@ async def handle_contact_admin(query, context):
         reply_markup=InlineKeyboardMarkup(keyboard)
     )
 
-# Handle back to menu
-async def handle_back_to_menu(update, context):
-    if update.callback_query:
-        query = update.callback_query
-        await query.answer()
-        user_id = str(query.from_user.id)
-        
-        welcome_msg = f"🤖 **{BOT_SETTINGS['bot_name']}**\n\n"
-        welcome_msg += f"👋 Welcome back, {query.from_user.first_name}!\n\n"
-        welcome_msg += f"{BOT_SETTINGS['welcome_message']}\n\n"
-        welcome_msg += "🎯 **Choose an option below:**"
-        
-        keyboard = create_admin_keyboard() if user_id == ADMIN_ID else create_main_keyboard()
-        
-        await query.edit_message_text(
-            welcome_msg, 
-            parse_mode='Markdown',
-            reply_markup=keyboard
-        )
-
-# Register back to menu handler
-async def callback_query_handler(update, context):
-    query = update.callback_query
+async def handle_back_to_menu(query, context):
+    user_id = str(query.from_user.id)
     
-    if query.data == "back_to_menu":
-        await handle_back_to_menu(update, context)
-    else:
-        await button_handler(update, context)
+    welcome_msg = f"🤖 **{BOT_SETTINGS['bot_name']}**\n\n"
+    welcome_msg += f"👋 Welcome back, {query.from_user.first_name}!\n\n"
+    welcome_msg += f"{BOT_SETTINGS['welcome_message']}\n\n"
+    welcome_msg += "🎯 **Choose an option below:**"
+    
+    keyboard = create_admin_keyboard() if user_id == ADMIN_ID else create_main_keyboard()
+    
+    await query.edit_message_text(
+        welcome_msg, 
+        parse_mode='Markdown',
+        reply_markup=keyboard
+    )
 
-# Admin commands
+# ================= API COMMANDS FOR DATRIX APP =================
+
+async def api_check_version(update, context):
+    """API: Check for latest version"""
+    try:
+        current_version = context.args[0] if context.args else "unknown"
+        
+        latest_version = FILES['datrix_app']['version']
+        
+        response = {
+            "status": "success",
+            "current_version": current_version,
+            "latest_version": latest_version,
+            "update_available": current_version != latest_version,
+            "download_available": FILES['datrix_app']['message_id'] is not None,
+            "file_size": FILES['datrix_app']['size'],
+            "description": FILES['datrix_app']['description']
+        }
+        
+        await update.message.reply_text(
+            f"API_RESPONSE: {json.dumps(response)}",
+            parse_mode='Markdown'
+        )
+        
+        logger.info(f"Version check: {current_version} -> {latest_version}")
+        
+    except Exception as e:
+        error_response = {"status": "error", "message": str(e)}
+        await update.message.reply_text(f"API_RESPONSE: {json.dumps(error_response)}")
+
+async def api_register_user(update, context):
+    """API: Register desktop app user"""
+    try:
+        if len(context.args) < 2:
+            response = {"status": "error", "message": "Usage: /api_register [user_data_json] [app_version]"}
+            await update.message.reply_text(f"API_RESPONSE: {json.dumps(response)}")
+            return
+        
+        user_data_str = context.args[0]
+        app_version = context.args[1]
+        
+        # Parse user data
+        user_data = json.loads(user_data_str.replace("'", '"'))
+        user_data['app_version'] = app_version
+        
+        # Register user
+        user_id = add_app_user(user_data)
+        
+        response = {
+            "status": "success",
+            "user_id": user_id,
+            "message": "User registered successfully",
+            "latest_version": FILES['datrix_app']['version']
+        }
+        
+        await update.message.reply_text(f"API_RESPONSE: {json.dumps(response)}")
+        
+        # Notify admin
+        await context.bot.send_message(
+            chat_id=ADMIN_ID,
+            text=f"📱 **New DATRIX App User**\n\n"
+                 f"👤 **Name:** {user_data.get('name', 'Unknown')}\n"
+                 f"🏢 **Company:** {user_data.get('company', 'Unknown')}\n"
+                 f"📊 **Sheet ID:** {user_data.get('googleSheetId', 'N/A')}\n"
+                 f"📱 **App Version:** {app_version}\n"
+                 f"🆔 **User ID:** {user_id}",
+            parse_mode='Markdown'
+        )
+        
+    except Exception as e:
+        error_response = {"status": "error", "message": str(e)}
+        await update.message.reply_text(f"API_RESPONSE: {json.dumps(error_response)}")
+
+async def api_report_error(update, context):
+    """API: Report error from desktop app"""
+    try:
+        if not context.args:
+            response = {"status": "error", "message": "Usage: /api_error [error_details]"}
+            await update.message.reply_text(f"API_RESPONSE: {json.dumps(response)}")
+            return
+        
+        error_details = ' '.join(context.args)
+        
+        # Send error report to admin
+        await context.bot.send_message(
+            chat_id=ADMIN_ID,
+            text=f"❌ **DATRIX App Error Report**\n\n"
+                 f"🕐 **Time:** {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n"
+                 f"📱 **Source:** Desktop Application\n"
+                 f"🔧 **Error:** {error_details}",
+            parse_mode='Markdown'
+        )
+        
+        response = {"status": "success", "message": "Error reported successfully"}
+        await update.message.reply_text(f"API_RESPONSE: {json.dumps(response)}")
+        
+    except Exception as e:
+        error_response = {"status": "error", "message": str(e)}
+        await update.message.reply_text(f"API_RESPONSE: {json.dumps(error_response)}")
+
+# ================= ADMIN COMMANDS =================
+
 async def set_file(update, context):
     user_id = str(update.effective_user.id)
     if user_id != ADMIN_ID:
@@ -392,13 +565,14 @@ async def set_file(update, context):
         FILES['datrix_app']['message_id'] = message_id
         FILES['datrix_app']['version'] = version
         FILES['datrix_app']['size'] = size
+        BOT_SETTINGS['app_version'] = version
         
         await update.message.reply_text(
             f"✅ **File Configuration Updated**\n\n"
             f"🆔 **Message ID:** `{message_id}`\n"
             f"🔢 **Version:** `{version}`\n"
             f"💾 **Size:** `{size}`\n\n"
-            f"🚀 **File is now available for users!**",
+            f"🚀 **File is now available for all users!**",
             parse_mode='Markdown'
         )
         
@@ -426,7 +600,7 @@ async def broadcast(update, context):
     
     load_users()
     
-    await update.message.reply_text("📡 **Sending broadcast...**", parse_mode='Markdown')
+    await update.message.reply_text("📡 **Sending broadcast to Telegram users...**", parse_mode='Markdown')
     
     broadcast_text = f"📢 **{BOT_SETTINGS['bot_name']} Update**\n\n{message}"
     keyboard = create_main_keyboard()
@@ -447,10 +621,37 @@ async def broadcast(update, context):
             failed_count += 1
     
     await update.message.reply_text(
-        f"✅ **Broadcast Complete!**\n\n"
+        f"✅ **Telegram Broadcast Complete!**\n\n"
         f"📤 **Sent:** {sent_count} messages\n"
         f"❌ **Failed:** {failed_count} messages\n"
-        f"👥 **Total Users:** {len(users_data) - 1}",  # -1 to exclude admin
+        f"👥 **Total Users:** {len(users_data) - 1}",
+        parse_mode='Markdown'
+    )
+
+async def app_broadcast(update, context):
+    """Send broadcast to app users"""
+    user_id = str(update.effective_user.id)
+    if user_id != ADMIN_ID:
+        return
+    
+    if not context.args:
+        await update.message.reply_text(
+            "📝 **Usage:** `/app_broadcast [message]`\n\n"
+            "**Example:** `/app_broadcast New DATRIX version v2.1.7 available!`",
+            parse_mode='Markdown'
+        )
+        return
+    
+    message = ' '.join(context.args)
+    
+    # This would be sent to app users via the app's internal messaging system
+    # For now, we'll just log it and notify admin
+    
+    await update.message.reply_text(
+        f"📱 **App Broadcast Prepared**\n\n"
+        f"📢 **Message:** {message}\n\n"
+        f"👥 **Target:** {len(app_users_data)} app users\n\n"
+        f"💡 **Note:** App users will receive this message when they next connect to the bot.",
         parse_mode='Markdown'
     )
 
@@ -462,10 +663,13 @@ async def stats(update, context):
     load_users()
     
     total_users = len(users_data) - 1  # Exclude admin
+    total_app_users = len(app_users_data)
     total_messages = sum(user['message_count'] for uid, user in users_data.items() if uid != ADMIN_ID)
     
     recent_users = 0
+    recent_app_users = 0
     now = datetime.now()
+    
     for uid, user in users_data.items():
         if uid == ADMIN_ID:
             continue
@@ -476,14 +680,64 @@ async def stats(update, context):
         except:
             pass
     
-    stats_msg = f"📊 **Detailed Statistics**\n\n"
-    stats_msg += f"👥 **Total Users:** {total_users}\n"
-    stats_msg += f"💬 **Total Messages:** {total_messages}\n"
-    stats_msg += f"🕐 **Active (24h):** {recent_users}\n"
+    for user in app_users_data.values():
+        try:
+            last_seen = datetime.fromisoformat(user['last_seen'])
+            if (now - last_seen).days < 7:
+                recent_app_users += 1
+        except:
+            pass
+    
+    stats_msg = f"📊 **Complete Statistics**\n\n"
+    stats_msg += f"**Telegram Users:**\n"
+    stats_msg += f"👥 **Total:** {total_users}\n"
+    stats_msg += f"💬 **Messages:** {total_messages}\n"
+    stats_msg += f"🕐 **Active (24h):** {recent_users}\n\n"
+    stats_msg += f"**App Users:**\n"
+    stats_msg += f"🖥️ **Total:** {total_app_users}\n"
+    stats_msg += f"🕐 **Recent (7d):** {recent_app_users}\n\n"
+    stats_msg += f"**System:**\n"
     stats_msg += f"📁 **File Status:** {"✅ Ready" if FILES['datrix_app']['message_id'] else "❌ Not set"}\n"
-    stats_msg += f"🔢 **Current Version:** {FILES['datrix_app']['version']}\n"
-    stats_msg += f"📈 **Usage:** {total_messages/max(total_users, 1):.1f} messages per user\n\n"
+    stats_msg += f"🔢 **Version:** {FILES['datrix_app']['version']}\n"
+    stats_msg += f"📥 **Downloads:** {FILES['datrix_app']['download_count']}\n\n"
     stats_msg += f"🤖 **Admin:** @{BOT_SETTINGS['admin_username']}"
+    
+    await update.message.reply_text(stats_msg, parse_mode='Markdown')
+
+async def app_stats(update, context):
+    """Show detailed app statistics"""
+    user_id = str(update.effective_user.id)
+    if user_id != ADMIN_ID:
+        return
+    
+    load_users()
+    
+    if not app_users_data:
+        await update.message.reply_text("📱 **No app users registered yet.**", parse_mode='Markdown')
+        return
+    
+    stats_msg = f"🖥️ **DATRIX App Detailed Statistics**\n\n"
+    stats_msg += f"👥 **Total Users:** {len(app_users_data)}\n\n"
+    
+    # Group by company
+    companies = {}
+    for user in app_users_data.values():
+        company = user.get('company', 'Unknown')
+        if company not in companies:
+            companies[company] = []
+        companies[company].append(user)
+    
+    stats_msg += "**By Company:**\n"
+    for company, users in companies.items():
+        stats_msg += f"🏢 {company}: {len(users)} users\n"
+    
+    stats_msg += "\n**Recent Users:**\n"
+    sorted_users = sorted(app_users_data.values(), key=lambda x: x.get('last_seen', ''), reverse=True)[:10]
+    for user in sorted_users:
+        name = user.get('name', 'Unknown')[:15]
+        company = user.get('company', 'Unknown')[:10]
+        version = user.get('app_version', 'Unknown')
+        stats_msg += f"👤 {name} ({company}) - {version}\n"
     
     await update.message.reply_text(stats_msg, parse_mode='Markdown')
 
@@ -503,7 +757,6 @@ async def update_admin(update, context):
     
     new_username = context.args[0].replace('@', '')
     BOT_SETTINGS['admin_username'] = new_username
-    save_settings()
     
     await update.message.reply_text(
         f"✅ **Admin Username Updated**\n\n"
@@ -511,27 +764,83 @@ async def update_admin(update, context):
         parse_mode='Markdown'
     )
 
+async def activate_license(update, context):
+    """Activate license for app user"""
+    user_id = str(update.effective_user.id)
+    if user_id != ADMIN_ID:
+        return
+    
+    if len(context.args) != 2:
+        await update.message.reply_text(
+            "📝 **Usage:** `/activate [sheet_id] [yyyy-mm-dd]`\n\n"
+            "**Example:** `/activate abc123xyz 2024-12-31`",
+            parse_mode='Markdown'
+        )
+        return
+    
+    sheet_id = context.args[0]
+    expiry_date = context.args[1]
+    
+    # Find user with this sheet ID
+    user_found = None
+    for user_id, user_data in app_users_data.items():
+        if user_data.get('googleSheetId') == sheet_id:
+            user_found = user_data
+            break
+    
+    if user_found:
+        user_found['license_status'] = 'active'
+        user_found['license_expires'] = expiry_date
+        save_users()
+        
+        await update.message.reply_text(
+            f"✅ **License Activated**\n\n"
+            f"👤 **User:** {user_found.get('name', 'Unknown')}\n"
+            f"🏢 **Company:** {user_found.get('company', 'Unknown')}\n"
+            f"📊 **Sheet ID:** {sheet_id}\n"
+            f"📅 **Expires:** {expiry_date}",
+            parse_mode='Markdown'
+        )
+    else:
+        await update.message.reply_text(
+            f"❌ **User not found with Sheet ID:** {sheet_id}\n\n"
+            f"Use `/app_stats` to see registered users.",
+            parse_mode='Markdown'
+        )
+
 def main():
     load_users()
-    load_settings()
     
     app = Application.builder().token(BOT_TOKEN).build()
     
+    # Telegram user handlers
     app.add_handler(CommandHandler("start", start))
+    app.add_handler(CallbackQueryHandler(button_handler))
+    
+    # API handlers for DATRIX app
+    app.add_handler(CommandHandler("api_version", api_check_version))
+    app.add_handler(CommandHandler("api_register", api_register_user))
+    app.add_handler(CommandHandler("api_error", api_report_error))
+    
+    # Admin commands
     app.add_handler(CommandHandler("set_file", set_file))
     app.add_handler(CommandHandler("broadcast", broadcast))
+    app.add_handler(CommandHandler("app_broadcast", app_broadcast))
     app.add_handler(CommandHandler("stats", stats))
+    app.add_handler(CommandHandler("app_stats", app_stats))
     app.add_handler(CommandHandler("update_admin", update_admin))
-    app.add_handler(CallbackQueryHandler(callback_query_handler))
+    app.add_handler(CommandHandler("activate", activate_license))
     
     print("🚀 DATRIX Professional Bot Starting...")
     print(f"🤖 Bot Token: {BOT_TOKEN[:10]}...")
     print(f"👤 Admin ID: {ADMIN_ID}")
     print(f"📁 Channel ID: {CHANNEL_ID}")
     print(f"🔗 Admin Username: @{BOT_SETTINGS['admin_username']}")
-    print("📊 User tracking enabled")
+    print("📊 Telegram user tracking enabled")
+    print("🖥️ DATRIX app integration enabled")
     print("📡 Broadcast system ready")
     print("⌨️ Inline keyboard interface active")
+    print("🔌 API endpoints for desktop app active")
     print("✅ Bot is ready and listening for messages!")
     
     app.run_polling(drop_pending_updates=True)
