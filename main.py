@@ -1122,6 +1122,8 @@ def main():
     app.add_handler(CommandHandler("api_version", api_check_version))
     app.add_handler(CommandHandler("api_register", api_register_user))
     app.add_handler(CommandHandler("api_error", api_report_error))
+    app.add_handler(CommandHandler("api_license", api_check_license))
+    app.add_handler(CommandHandler("api_activate", api_activate_license))
     
     # Admin commands
     app.add_handler(CommandHandler("set_file", set_file))
