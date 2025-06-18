@@ -1,26 +1,66 @@
-from telegram.ext import Application, CommandHandler
+from telegram.ext import Application, CommandHandler, MessageHandler, filters
 import logging
+import json
+import os
 from datetime import datetime
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 BOT_TOKEN = '7803291138:AAExEBQq9uZhq6X_ncI_c8E2J80-tpZtq8E'
-ADMIN_CHAT_ID = '811896458'
-STORAGE_CHANNEL_ID = '-1002807912676'
+ADMIN_ID = '811896458'
+CHANNEL_ID = '-1002807912676'
 
-STORED_FILES = {
+# User tracking
+USERS_FILE = 'users.json'
+users_data = {}
+
+def load_users():
+    global users_data
+    try:
+        if os.path.exists(USERS_FILE):
+            with open(USERS_FILE, 'r') as f:
+                users_data = json.load(f)
+    except:
+        users_data = {}
+
+def save_users():
+    try:
+        with open(USERS_FILE, 'w') as f:
+            json.dump(users_data, f)
+    except:
+        pass
+
+def add_user(user):
+    user_id = str(user.id)
+    if user_id not in users_data:
+        users_data[user_id] = {
+            'id': user.id,
+            'username': user.username,
+            'first_name': user.first_name,
+            'last_name': user.last_name,
+            'join_date': datetime.now().isoformat(),
+            'last_active': datetime.now().isoformat(),
+            'message_count': 0
+        }
+    else:
+        users_data[user_id]['last_active'] = datetime.now().isoformat()
+        users_data[user_id]['message_count'] += 1
+    
+    save_users()
+
+FILES = {
     'datrix_app': {
-        'message_id': None,
-        'description': 'DATRIX Accounting Application',
-        'version': 'v2.1.6',
+        'message_id': None, 
+        'version': 'v2.1.6', 
         'size': 'Not set',
-        'filename': 'DATRIX_Setup.exe',
-        'upload_date': None
+        'description': 'DATRIX Accounting Application'
     }
 }
 
 async def start(update, context):
+    add_user(update.effective_user)
+    
     message = """🤖 **DATRIX File Server**
 
 📋 **Available Commands:**
@@ -29,17 +69,49 @@ async def start(update, context):
 • `/status` - Check bot status
 • `/help` - Show this help
 
-🌐 **Running 24/7 on Cloud Server**
+🌐 **Running 24/7 on Railway Cloud**
 ⚡ **Instant Downloads via Channel Forwarding**
-📁 **Support for Large Files (100MB+)**"""
+📁 **Support for Large Files (100MB+)**
+
+💡 **Welcome to DATRIX! You'll receive automatic updates when new versions are available.**"""
     
     await update.message.reply_text(message, parse_mode='Markdown')
-    logger.info(f"Start command used by {update.effective_user.id}")
+    logger.info(f"New user started bot: {update.effective_user.id}")
+
+async def help_command(update, context):
+    add_user(update.effective_user)
+    user_id = str(update.effective_user.id)
+    
+    if user_id == ADMIN_ID:
+        help_text = """🔧 **Admin Commands:**
+
+• `/set_file [msg_id] [version] [size]` - Set file for forwarding
+• `/broadcast [message]` - Send message to all users
+• `/stats` - Show user statistics
+• `/status` - Bot status
+• `/list_files` - Show files
+• `/help` - This help
+
+**Example:** `/set_file 123 v2.1.7 125MB`
+**Broadcast:** `/broadcast New version available!`"""
+    else:
+        help_text = """🤖 **DATRIX Bot Help**
+
+• `/start` - Welcome message
+• `/datrix_app` - Download DATRIX Application
+• `/list_files` - Show available files
+• `/status` - Check bot status
+• `/help` - This help
+
+**How to download:** Just send `/datrix_app` and get instant delivery!"""
+    
+    await update.message.reply_text(help_text, parse_mode='Markdown')
 
 async def list_files(update, context):
+    add_user(update.effective_user)
     text = "📂 **Available Files:**\n\n"
     
-    for key, info in STORED_FILES.items():
+    for key, info in FILES.items():
         if info['message_id']:
             status = "✅ Available for instant download"
             download_cmd = f"/{key}"
@@ -50,17 +122,35 @@ async def list_files(update, context):
         text += f"📄 **{info['description']}**\n"
         text += f"🔢 Version: `{info['version']}`\n"
         text += f"💾 Size: `{info['size']}`\n"
-        text += f"📁 File: `{info['filename']}`\n"
         text += f"📊 Status: {status}\n"
-        text += f"⌨️ Command: `{download_cmd}`\n"
-        if info['upload_date']:
-            text += f"📅 Updated: {info['upload_date']}\n"
-        text += "\n"
+        text += f"⌨️ Command: `{download_cmd}`\n\n"
     
     await update.message.reply_text(text, parse_mode='Markdown')
 
+async def status(update, context):
+    add_user(update.effective_user)
+    uptime = datetime.now().strftime("%Y-%m-%d %H:%M:%S UTC")
+    file_info = FILES['datrix_app']
+    file_status = "✅ Ready" if file_info['message_id'] else "❌ Not configured"
+    
+    status_msg = f"""🟢 **DATRIX Bot Status**
+
+✅ **Status:** Online and Running
+🌐 **Server:** Railway Cloud Platform  
+⏰ **Time:** `{uptime}`
+📁 **DATRIX App:** {file_status}
+🔢 **Version:** `{file_info['version']}`
+💾 **Size:** `{file_info['size']}`
+⚡ **Delivery:** Channel Forwarding (Instant)
+
+👤 **User:** {update.effective_user.first_name}
+🆔 **User ID:** `{update.effective_user.id}`"""
+    
+    await update.message.reply_text(status_msg, parse_mode='Markdown')
+
 async def get_datrix_app(update, context):
-    file_info = STORED_FILES['datrix_app']
+    add_user(update.effective_user)
+    file_info = FILES['datrix_app']
     
     if not file_info['message_id']:
         await update.message.reply_text(
@@ -70,28 +160,37 @@ async def get_datrix_app(update, context):
         )
         return
     
-    await context.bot.forward_message(
-        chat_id=update.effective_chat.id,
-        from_chat_id=STORAGE_CHANNEL_ID,
-        message_id=file_info['message_id']
-    )
-    
-    await update.message.reply_text(
-        f"✅ **{file_info['description']} Delivered!**\n\n"
-        f"🔢 **Version:** {file_info['version']}\n"
-        f"💾 **Size:** {file_info['size']}\n"
-        f"⚡ **Delivery:** Instant forwarding from cloud storage\n\n"
-        f"🚀 **Enjoy using DATRIX!**",
-        parse_mode='Markdown'
-    )
+    try:
+        await context.bot.forward_message(
+            chat_id=update.effective_chat.id,
+            from_chat_id=CHANNEL_ID,
+            message_id=file_info['message_id']
+        )
+        
+        await update.message.reply_text(
+            f"✅ **{file_info['description']} Delivered!**\n\n"
+            f"🔢 **Version:** {file_info['version']}\n"
+            f"💾 **Size:** {file_info['size']}\n"
+            f"⚡ **Delivery:** Instant forwarding from cloud storage\n\n"
+            f"🚀 **Enjoy using DATRIX!**",
+            parse_mode='Markdown'
+        )
+        logger.info(f"File delivered to user {update.effective_user.id}")
+        
+    except Exception as e:
+        await update.message.reply_text(
+            "❌ **Download Error**\n\nSorry, there was an error delivering the file. Please try again.",
+            parse_mode='Markdown'
+        )
+        logger.error(f"Error delivering file: {e}")
 
-async def set_file_info(update, context):
+async def set_file(update, context):
     user_id = str(update.effective_user.id)
-    if user_id != ADMIN_CHAT_ID:
+    if user_id != ADMIN_ID:
         await update.message.reply_text("⛔ **Admin access required.**", parse_mode='Markdown')
         return
     
-    if len(context.args) < 1:
+    if not context.args:
         await update.message.reply_text(
             "📝 **Usage:** `/set_file [message_id] [version] [size]`\n\n"
             "**Example:** `/set_file 123 v2.1.7 125MB`",
@@ -101,83 +200,127 @@ async def set_file_info(update, context):
     
     try:
         message_id = int(context.args[0])
-        version = context.args[1] if len(context.args) > 1 else STORED_FILES['datrix_app']['version']
+        version = context.args[1] if len(context.args) > 1 else FILES['datrix_app']['version']
         size = context.args[2] if len(context.args) > 2 else "Unknown"
         
-        STORED_FILES['datrix_app']['message_id'] = message_id
-        STORED_FILES['datrix_app']['version'] = version
-        STORED_FILES['datrix_app']['size'] = size
-        STORED_FILES['datrix_app']['upload_date'] = datetime.now().strftime("%Y-%m-%d %H:%M")
+        FILES['datrix_app']['message_id'] = message_id
+        FILES['datrix_app']['version'] = version
+        FILES['datrix_app']['size'] = size
         
         await update.message.reply_text(
             f"✅ **File Information Updated!**\n\n"
             f"🆔 **Message ID:** `{message_id}`\n"
             f"🔢 **Version:** `{version}`\n"
-            f"💾 **Size:** `{size}`\n"
-            f"📅 **Updated:** {STORED_FILES['datrix_app']['upload_date']}\n\n"
-            f"🚀 **File is now available for instant delivery!**",
+            f"💾 **Size:** `{size}`\n\n"
+            f"🚀 **File is now available for instant delivery!**\n"
+            f"⚡ **Users can get it with:** `/datrix_app`",
             parse_mode='Markdown'
         )
+        logger.info(f"Admin updated file: ID={message_id}, Version={version}")
         
     except ValueError:
         await update.message.reply_text("❌ **Error:** Message ID must be a number", parse_mode='Markdown')
+    except Exception as e:
+        await update.message.reply_text(f"❌ **Error:** {str(e)}", parse_mode='Markdown')
 
-async def status(update, context):
-    uptime = datetime.now().strftime("%Y-%m-%d %H:%M:%S UTC")
-    file_info = STORED_FILES['datrix_app']
-    file_status = "✅ Ready" if file_info['message_id'] else "❌ Not configured"
-    
-    status_msg = f"""🟢 **DATRIX Bot Status**
-
-✅ **Status:** Online and Running
-🌐 **Server:** Cloud Platform  
-⏰ **Time:** `{uptime}`
-📁 **DATRIX App:** {file_status}
-🔢 **Version:** `{file_info['version']}`
-💾 **Size:** `{file_info['size']}`
-⚡ **Delivery:** Channel Forwarding (Instant)
-
-👤 **User:** {update.effective_user.first_name}"""
-    
-    await update.message.reply_text(status_msg, parse_mode='Markdown')
-
-async def help_command(update, context):
+async def broadcast(update, context):
     user_id = str(update.effective_user.id)
+    if user_id != ADMIN_ID:
+        await update.message.reply_text("⛔ **Admin access required.**", parse_mode='Markdown')
+        return
     
-    if user_id == ADMIN_CHAT_ID:
-        help_text = """🔧 **Admin Commands:**
-
-• `/set_file [msg_id] [version] [size]` - Set file for forwarding
-• `/status` - Bot status
-• `/list_files` - Show files
-• `/help` - This help"""
-    else:
-        help_text = """🤖 **DATRIX Bot Help**
-
-• `/start` - Welcome message
-• `/datrix_app` - Download DATRIX Application
-• `/list_files` - Show available files
-• `/status` - Check bot status
-• `/help` - This help"""
+    if not context.args:
+        await update.message.reply_text(
+            "📝 **Usage:** `/broadcast [message]`\n\n"
+            "**Example:** `/broadcast New DATRIX version v2.1.8 is available!`",
+            parse_mode='Markdown'
+        )
+        return
     
-    await update.message.reply_text(help_text, parse_mode='Markdown')
+    message = ' '.join(context.args)
+    sent_count = 0
+    failed_count = 0
+    
+    load_users()
+    
+    await update.message.reply_text("📡 **Starting broadcast...**", parse_mode='Markdown')
+    
+    for user_id_str, user_info in users_data.items():
+        try:
+            await context.bot.send_message(
+                chat_id=int(user_id_str),
+                text=f"📢 **DATRIX Broadcast Message**\n\n{message}",
+                parse_mode='Markdown'
+            )
+            sent_count += 1
+        except:
+            failed_count += 1
+    
+    await update.message.reply_text(
+        f"✅ **Broadcast Complete!**\n\n"
+        f"📤 **Sent:** {sent_count} messages\n"
+        f"❌ **Failed:** {failed_count} messages\n"
+        f"👥 **Total Users:** {len(users_data)}",
+        parse_mode='Markdown'
+    )
+
+async def stats(update, context):
+    user_id = str(update.effective_user.id)
+    if user_id != ADMIN_ID:
+        await update.message.reply_text("⛔ **Admin access required.**", parse_mode='Markdown')
+        return
+    
+    load_users()
+    
+    total_users = len(users_data)
+    total_messages = sum(user['message_count'] for user in users_data.values())
+    
+    # Recent users (last 24 hours)
+    recent_users = 0
+    now = datetime.now()
+    for user in users_data.values():
+        try:
+            last_active = datetime.fromisoformat(user['last_active'])
+            if (now - last_active).days < 1:
+                recent_users += 1
+        except:
+            pass
+    
+    stats_msg = f"""📊 **Bot Statistics**
+
+👥 **Total Users:** {total_users}
+💬 **Total Messages:** {total_messages}
+🕐 **Active (24h):** {recent_users}
+📁 **File Status:** {"✅ Ready" if FILES['datrix_app']['message_id'] else "❌ Not set"}
+🔢 **Current Version:** {FILES['datrix_app']['version']}
+
+📈 **Usage:** {total_messages/max(total_users, 1):.1f} messages per user"""
+    
+    await update.message.reply_text(stats_msg, parse_mode='Markdown')
 
 def main():
-    application = Application.builder().token(BOT_TOKEN).build()
+    load_users()
     
-    application.add_handler(CommandHandler("start", start))
-    application.add_handler(CommandHandler("help", help_command))
-    application.add_handler(CommandHandler("list_files", list_files))
-    application.add_handler(CommandHandler("datrix_app", get_datrix_app))
-    application.add_handler(CommandHandler("set_file", set_file_info))
-    application.add_handler(CommandHandler("status", status))
+    app = Application.builder().token(BOT_TOKEN).build()
+    
+    app.add_handler(CommandHandler("start", start))
+    app.add_handler(CommandHandler("help", help_command))
+    app.add_handler(CommandHandler("list_files", list_files))
+    app.add_handler(CommandHandler("status", status))
+    app.add_handler(CommandHandler("datrix_app", get_datrix_app))
+    app.add_handler(CommandHandler("set_file", set_file))
+    app.add_handler(CommandHandler("broadcast", broadcast))
+    app.add_handler(CommandHandler("stats", stats))
     
     print("🚀 DATRIX Bot Starting...")
     print(f"🤖 Bot Token: {BOT_TOKEN[:10]}...")
-    print(f"👤 Admin ID: {ADMIN_CHAT_ID}")
+    print(f"👤 Admin ID: {ADMIN_ID}")
+    print(f"📁 Channel ID: {CHANNEL_ID}")
+    print("📊 User tracking enabled")
+    print("📡 Broadcast system ready")
     print("✅ Bot is ready and listening for messages!")
     
-    application.run_polling(drop_pending_updates=True)
+    app.run_polling(drop_pending_updates=True)
 
 if __name__ == '__main__':
     main()
