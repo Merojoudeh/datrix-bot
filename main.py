@@ -6,6 +6,7 @@ import os
 import time
 import requests
 from datetime import datetime, timedelta
+import re
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -27,11 +28,13 @@ BOT_SETTINGS = {
 USERS_FILE = 'users.json'
 APP_USERS_FILE = 'app_users.json'
 SETTINGS_FILE = 'settings.json'
+LICENSE_REQUESTS_FILE = 'license_requests.json'
 users_data = {}
 app_users_data = {}
+pending_license_requests = {}
 
 def load_users():
-    global users_data, app_users_data
+    global users_data, app_users_data, pending_license_requests
     try:
         if os.path.exists(USERS_FILE):
             with open(USERS_FILE, 'r') as f:
@@ -39,16 +42,41 @@ def load_users():
         if os.path.exists(APP_USERS_FILE):
             with open(APP_USERS_FILE, 'r') as f:
                 app_users_data = json.load(f)
-    except:
+        if os.path.exists(LICENSE_REQUESTS_FILE):
+            with open(LICENSE_REQUESTS_FILE, 'r') as f:
+                pending_license_requests = json.load(f)
+    except Exception as e:
+        logger.error(f"Error loading user data: {e}")
         users_data = {}
         app_users_data = {}
+        pending_license_requests = {}
 
 def save_users():
     try:
         with open(USERS_FILE, 'w') as f:
-            json.dump(users_data, f)
+            json.dump(users_data, f, indent=2)
         with open(APP_USERS_FILE, 'w') as f:
-            json.dump(app_users_data, f)
+            json.dump(app_users_data, f, indent=2)
+        with open(LICENSE_REQUESTS_FILE, 'w') as f:
+            json.dump(pending_license_requests, f, indent=2)
+        logger.info("User data saved successfully")
+    except Exception as e:
+        logger.error(f"Error saving user data: {e}")
+
+def load_settings():
+    global BOT_SETTINGS
+    try:
+        if os.path.exists(SETTINGS_FILE):
+            with open(SETTINGS_FILE, 'r') as f:
+                saved_settings = json.load(f)
+                BOT_SETTINGS.update(saved_settings)
+    except:
+        pass
+
+def save_settings():
+    try:
+        with open(SETTINGS_FILE, 'w') as f:
+            json.dump(BOT_SETTINGS, f, indent=2)
     except:
         pass
 
@@ -77,25 +105,29 @@ def add_user(user, source='telegram'):
 
 def add_app_user(user_data):
     """Add desktop app user"""
-    user_id = user_data.get('user_id', str(int(time.time())))
-    
-    app_user_info = {
-        'user_id': user_id,
-        'name': user_data.get('name', 'Unknown'),
-        'company': user_data.get('company', 'Unknown'),
-        'googleSheetId': user_data.get('googleSheetId', ''),
-        'app_version': user_data.get('app_version', BOT_SETTINGS['app_version']),
-        'install_path': user_data.get('install_path', ''),
-        'registration_date': datetime.now().isoformat(),
-        'last_seen': datetime.now().isoformat(),
-        'license_status': user_data.get('license_status', 'inactive'),
-        'license_expires': user_data.get('license_expires', 'N/A')
-    }
-    
-    app_users_data[user_id] = app_user_info
-    save_users()
-    logger.info(f"App user registered: {user_data.get('name')} ({user_id})")
-    return user_id
+    try:
+        user_id = user_data.get('user_id', str(int(time.time())))
+        
+        app_user_info = {
+            'user_id': user_id,
+            'name': user_data.get('name', 'Unknown'),
+            'company': user_data.get('company', 'Unknown'),
+            'googleSheetId': user_data.get('googleSheetId', ''),
+            'app_version': user_data.get('app_version', BOT_SETTINGS['app_version']),
+            'install_path': user_data.get('install_path', ''),
+            'registration_date': datetime.now().isoformat(),
+            'last_seen': datetime.now().isoformat(),
+            'license_status': user_data.get('license_status', 'inactive'),
+            'license_expires': user_data.get('license_expires', 'N/A')
+        }
+        
+        app_users_data[user_id] = app_user_info
+        save_users()
+        logger.info(f"App user registered: {user_data.get('name')} ({user_id})")
+        return user_id
+    except Exception as e:
+        logger.error(f"Error adding app user: {e}")
+        return None
 
 FILES = {
     'datrix_app': {
@@ -162,31 +194,127 @@ async def start(update, context):
         reply_markup=keyboard
     )
 
-async def button_handler(update, context):
+async def callback_query_handler(update, context):
     query = update.callback_query
     await query.answer()
     
+    callback_data = query.data
+    logger.info(f"Received callback: {callback_data}")
+    
+    # Handle license request callbacks
+    if callback_data.startswith('req_') and ('_extend_' in callback_data or '_deny' in callback_data):
+        await handle_license_callback(query, context, callback_data)
+        return
+    
+    # Handle regular menu callbacks
     add_user(query.from_user)
     user_id = str(query.from_user.id)
     
-    if query.data == "download_datrix":
+    if callback_data == "download_datrix":
         await handle_download(query, context)
-    elif query.data == "list_files":
+    elif callback_data == "list_files":
         await handle_list_files(query, context)
-    elif query.data == "bot_status":
+    elif callback_data == "bot_status":
         await handle_status(query, context)
-    elif query.data == "help":
+    elif callback_data == "help":
         await handle_help(query, context)
-    elif query.data == "admin_help":
+    elif callback_data == "admin_help":
         await handle_admin_help(query, context)
-    elif query.data == "admin_stats":
+    elif callback_data == "admin_stats":
         await handle_admin_stats(query, context)
-    elif query.data == "app_stats":
+    elif callback_data == "app_stats":
         await handle_app_stats(query, context)
-    elif query.data == "contact_admin":
+    elif callback_data == "contact_admin":
         await handle_contact_admin(query, context)
-    elif query.data == "back_to_menu":
+    elif callback_data == "back_to_menu":
         await handle_back_to_menu(query, context)
+
+async def handle_license_callback(query, context, callback_data):
+    """Handle license request callbacks"""
+    try:
+        logger.info(f"Processing license callback: {callback_data}")
+        
+        # Parse callback data: req_{timestamp}_extend_{days} or req_{timestamp}_deny
+        parts = callback_data.split('_')
+        if len(parts) < 3:
+            logger.error(f"Invalid callback format: {callback_data}")
+            return
+        
+        request_timestamp = parts[1]
+        action = parts[2]
+        request_id = f"req_{request_timestamp}"
+        
+        # Get original message info
+        original_message_text = query.message.text
+        chat_id = query.message.chat_id
+        message_id = query.message.message_id
+        
+        # Extract Google Sheet ID from original message
+        sheet_id_match = re.search(r'Sheet ID: ([a-zA-Z0-9_-]+)', original_message_text)
+        google_sheet_id = sheet_id_match.group(1) if sheet_id_match else "unknown"
+        
+        if action == "deny":
+            # Handle denial
+            new_text = original_message_text.split("\n\nPlease select an option")[0]
+            new_text += f"\n\n❌ **License request DENIED**"
+            
+            await query.edit_message_text(new_text, parse_mode='Markdown')
+            
+            confirmation = f"❌ License request denied for Google Sheet ID: {google_sheet_id}"
+            await context.bot.send_message(chat_id=chat_id, text=confirmation)
+            
+            logger.info(f"License request denied for {google_sheet_id}")
+            
+        elif action == "extend":
+            # Get days from callback data
+            if len(parts) >= 4:
+                try:
+                    days = int(parts[3])
+                except ValueError:
+                    days = 30
+            else:
+                days = 30
+            
+            # Calculate expiry date
+            expiry_date = (datetime.now() + timedelta(days=days)).strftime('%Y-%m-%d')
+            
+            # Update message
+            new_text = original_message_text.split("\n\nPlease select an option")[0]
+            new_text += f"\n\n✅ **License APPROVED for {days} days**\n📅 **Expires:** {expiry_date}"
+            
+            await query.edit_message_text(new_text, parse_mode='Markdown')
+            
+            # Send confirmation
+            confirmation = f"✅ License activated for Google Sheet ID: {google_sheet_id}\n📅 Valid until: {expiry_date}"
+            await context.bot.send_message(chat_id=chat_id, text=confirmation)
+            
+            # Update app user if found
+            user_updated = False
+            for user_id, user_data in app_users_data.items():
+                if user_data.get('googleSheetId') == google_sheet_id:
+                    user_data['license_status'] = 'active'
+                    user_data['license_expires'] = expiry_date
+                    user_data['last_seen'] = datetime.now().isoformat()
+                    user_updated = True
+                    break
+            
+            if user_updated:
+                save_users()
+                logger.info(f"Updated app user license for {google_sheet_id}")
+            
+            logger.info(f"License extended for {google_sheet_id} until {expiry_date}")
+        
+        # Clean up pending request if exists
+        if request_id in pending_license_requests:
+            del pending_license_requests[request_id]
+            save_users()
+            
+    except Exception as e:
+        logger.error(f"Error processing license callback: {e}")
+        await query.edit_message_text(
+            f"❌ Error processing request: {str(e)}",
+            parse_mode='Markdown'
+        )
 
 async def handle_download(query, context):
     file_info = FILES['datrix_app']
@@ -311,7 +439,8 @@ async def handle_admin_help(query, context):
     help_text += "`/stats` - Show detailed user statistics\n"
     help_text += "`/app_stats` - Show app user statistics\n"
     help_text += "`/update_admin [username]` - Update admin username\n"
-    help_text += "`/activate [sheet_id] [yyyy-mm-dd]` - Activate app license\n\n"
+    help_text += "`/activate [sheet_id] [yyyy-mm-dd]` - Activate app license\n"
+    help_text += "`/request_license` - Test license request\n\n"
     help_text += "**API Commands (for DATRIX app):**\n"
     help_text += "`/api_version` - Get latest version info\n"
     help_text += "`/api_register` - Register app user\n\n"
@@ -394,6 +523,9 @@ async def handle_app_stats(query, context):
             company = user.get('company', 'Unknown')[:15]
             status = "✅" if user.get('license_status') == 'active' else "❌"
             stats_msg += f"{status} {name} ({company})\n"
+    else:
+        stats_msg += "**No app users registered yet.**\n"
+        stats_msg += "Users will appear here when DATRIX app connects to the bot."
     
     keyboard = [[InlineKeyboardButton("🔙 Back to Menu", callback_data="back_to_menu")]]
     
@@ -475,43 +607,73 @@ async def api_check_version(update, context):
 async def api_register_user(update, context):
     """API: Register desktop app user"""
     try:
-        if len(context.args) < 2:
-            response = {"status": "error", "message": "Usage: /api_register [user_data_json] [app_version]"}
+        logger.info(f"API register called with args: {context.args}")
+        
+        if len(context.args) < 1:
+            response = {"status": "error", "message": "Usage: /api_register [user_data_json]"}
             await update.message.reply_text(f"API_RESPONSE: {json.dumps(response)}")
             return
         
-        user_data_str = context.args[0]
-        app_version = context.args[1]
+        # Parse user data from the message text (everything after /api_register)
+        full_text = update.message.text
+        user_data_start = full_text.find(' ') + 1
+        user_data_str = full_text[user_data_start:].strip()
         
-        # Parse user data
-        user_data = json.loads(user_data_str.replace("'", '"'))
-        user_data['app_version'] = app_version
+        logger.info(f"Parsing user data: {user_data_str}")
+        
+        # Try to parse as JSON
+        try:
+            user_data = json.loads(user_data_str)
+        except:
+            # If not valid JSON, try to parse manually
+            user_data = {}
+            try:
+                # Remove quotes and parse key-value pairs
+                clean_str = user_data_str.replace("'", '"').replace('\\', '')
+                user_data = json.loads(clean_str)
+            except:
+                logger.error(f"Failed to parse user data: {user_data_str}")
+                response = {"status": "error", "message": "Invalid user data format"}
+                await update.message.reply_text(f"API_RESPONSE: {json.dumps(response)}")
+                return
+        
+        # Add timestamp as user_id if not provided
+        if 'user_id' not in user_data:
+            user_data['user_id'] = str(int(time.time()))
         
         # Register user
         user_id = add_app_user(user_data)
         
-        response = {
-            "status": "success",
-            "user_id": user_id,
-            "message": "User registered successfully",
-            "latest_version": FILES['datrix_app']['version']
-        }
-        
-        await update.message.reply_text(f"API_RESPONSE: {json.dumps(response)}")
-        
-        # Notify admin
-        await context.bot.send_message(
-            chat_id=ADMIN_ID,
-            text=f"📱 **New DATRIX App User**\n\n"
-                 f"👤 **Name:** {user_data.get('name', 'Unknown')}\n"
-                 f"🏢 **Company:** {user_data.get('company', 'Unknown')}\n"
-                 f"📊 **Sheet ID:** {user_data.get('googleSheetId', 'N/A')}\n"
-                 f"📱 **App Version:** {app_version}\n"
-                 f"🆔 **User ID:** {user_id}",
-            parse_mode='Markdown'
-        )
+        if user_id:
+            response = {
+                "status": "success",
+                "user_id": user_id,
+                "message": "User registered successfully",
+                "latest_version": FILES['datrix_app']['version']
+            }
+            
+            await update.message.reply_text(f"API_RESPONSE: {json.dumps(response)}")
+            
+            # Notify admin
+            await context.bot.send_message(
+                chat_id=ADMIN_ID,
+                text=f"📱 **New DATRIX App User Registered**\n\n"
+                     f"👤 **Name:** {user_data.get('name', 'Unknown')}\n"
+                     f"🏢 **Company:** {user_data.get('company', 'Unknown')}\n"
+                     f"📊 **Sheet ID:** {user_data.get('googleSheetId', 'N/A')}\n"
+                     f"📱 **App Version:** {user_data.get('app_version', 'Unknown')}\n"
+                     f"🆔 **User ID:** {user_id}\n"
+                     f"📅 **Registered:** {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
+                parse_mode='Markdown'
+            )
+            
+            logger.info(f"Successfully registered app user: {user_id}")
+        else:
+            response = {"status": "error", "message": "Failed to register user"}
+            await update.message.reply_text(f"API_RESPONSE: {json.dumps(response)}")
         
     except Exception as e:
+        logger.error(f"Error in api_register_user: {e}")
         error_response = {"status": "error", "message": str(e)}
         await update.message.reply_text(f"API_RESPONSE: {json.dumps(error_response)}")
 
@@ -541,6 +703,69 @@ async def api_report_error(update, context):
     except Exception as e:
         error_response = {"status": "error", "message": str(e)}
         await update.message.reply_text(f"API_RESPONSE: {json.dumps(error_response)}")
+
+async def request_license_activation(update, context):
+    """Send a license activation request with buttons"""
+    try:
+        if len(context.args) < 3:
+            await update.message.reply_text(
+                "📝 **Usage:** `/request_license [user_name] [company] [sheet_id]`\n\n"
+                "**Example:** `/request_license John_Doe ACME_Corp abc123xyz`",
+                parse_mode='Markdown'
+            )
+            return
+        
+        user_name = context.args[0].replace('_', ' ')
+        company = context.args[1].replace('_', ' ')
+        sheet_id = context.args[2]
+        
+        # Create unique request ID
+        timestamp = int(datetime.now().timestamp())
+        request_id = f"req_{timestamp}"
+        
+        # Store request info
+        pending_license_requests[request_id] = {
+            'timestamp': datetime.now().isoformat(),
+            'user_name': user_name,
+            'company': company,
+            'sheet_id': sheet_id,
+            'status': 'pending'
+        }
+        save_users()
+        
+        # Create the license request message
+        request_message = f"""🔑 **DATRIX LICENSE REQUEST**
+━━━━━━━━━━━━━━━
+👤 **User:** {user_name}
+🏢 **Company:** {company}
+📊 **Sheet ID:** {sheet_id}
+⏰ **Requested:** {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
+
+Please select an option below to respond to this request."""
+        
+        # Create inline keyboard with approval options
+        keyboard = [
+            [
+                InlineKeyboardButton("✅ 30 Days", callback_data=f"req_{timestamp}_extend_30"),
+                InlineKeyboardButton("✅ 90 Days", callback_data=f"req_{timestamp}_extend_90")
+            ],
+            [
+                InlineKeyboardButton("✅ 365 Days", callback_data=f"req_{timestamp}_extend_365"),
+                InlineKeyboardButton("❌ Deny", callback_data=f"req_{timestamp}_deny")
+            ]
+        ]
+        
+        await update.message.reply_text(
+            request_message,
+            parse_mode='Markdown',
+            reply_markup=InlineKeyboardMarkup(keyboard)
+        )
+        
+        logger.info(f"License request created: {request_id} for {sheet_id}")
+        
+    except Exception as e:
+        logger.error(f"Error creating license request: {e}")
+        await update.message.reply_text(f"❌ Error creating license request: {str(e)}")
 
 # ================= ADMIN COMMANDS =================
 
@@ -628,33 +853,6 @@ async def broadcast(update, context):
         parse_mode='Markdown'
     )
 
-async def app_broadcast(update, context):
-    """Send broadcast to app users"""
-    user_id = str(update.effective_user.id)
-    if user_id != ADMIN_ID:
-        return
-    
-    if not context.args:
-        await update.message.reply_text(
-            "📝 **Usage:** `/app_broadcast [message]`\n\n"
-            "**Example:** `/app_broadcast New DATRIX version v2.1.7 available!`",
-            parse_mode='Markdown'
-        )
-        return
-    
-    message = ' '.join(context.args)
-    
-    # This would be sent to app users via the app's internal messaging system
-    # For now, we'll just log it and notify admin
-    
-    await update.message.reply_text(
-        f"📱 **App Broadcast Prepared**\n\n"
-        f"📢 **Message:** {message}\n\n"
-        f"👥 **Target:** {len(app_users_data)} app users\n\n"
-        f"💡 **Note:** App users will receive this message when they next connect to the bot.",
-        parse_mode='Markdown'
-    )
-
 async def stats(update, context):
     user_id = str(update.effective_user.id)
     if user_id != ADMIN_ID:
@@ -719,25 +917,15 @@ async def app_stats(update, context):
     stats_msg = f"🖥️ **DATRIX App Detailed Statistics**\n\n"
     stats_msg += f"👥 **Total Users:** {len(app_users_data)}\n\n"
     
-    # Group by company
-    companies = {}
-    for user in app_users_data.values():
-        company = user.get('company', 'Unknown')
-        if company not in companies:
-            companies[company] = []
-        companies[company].append(user)
-    
-    stats_msg += "**By Company:**\n"
-    for company, users in companies.items():
-        stats_msg += f"🏢 {company}: {len(users)} users\n"
-    
-    stats_msg += "\n**Recent Users:**\n"
+    # Show recent users
+    stats_msg += "**Recent Users:**\n"
     sorted_users = sorted(app_users_data.values(), key=lambda x: x.get('last_seen', ''), reverse=True)[:10]
     for user in sorted_users:
         name = user.get('name', 'Unknown')[:15]
         company = user.get('company', 'Unknown')[:10]
         version = user.get('app_version', 'Unknown')
-        stats_msg += f"👤 {name} ({company}) - {version}\n"
+        status = "✅" if user.get('license_status') == 'active' else "❌"
+        stats_msg += f"{status} {name} ({company}) - {version}\n"
     
     await update.message.reply_text(stats_msg, parse_mode='Markdown')
 
@@ -757,6 +945,7 @@ async def update_admin(update, context):
     
     new_username = context.args[0].replace('@', '')
     BOT_SETTINGS['admin_username'] = new_username
+    save_settings()
     
     await update.message.reply_text(
         f"✅ **Admin Username Updated**\n\n"
@@ -783,7 +972,7 @@ async def activate_license(update, context):
     
     # Find user with this sheet ID
     user_found = None
-    for user_id, user_data in app_users_data.items():
+    for user_id_key, user_data in app_users_data.items():
         if user_data.get('googleSheetId') == sheet_id:
             user_found = user_data
             break
@@ -810,12 +999,13 @@ async def activate_license(update, context):
 
 def main():
     load_users()
+    load_settings()
     
     app = Application.builder().token(BOT_TOKEN).build()
     
     # Telegram user handlers
     app.add_handler(CommandHandler("start", start))
-    app.add_handler(CallbackQueryHandler(button_handler))
+    app.add_handler(CallbackQueryHandler(callback_query_handler))
     
     # API handlers for DATRIX app
     app.add_handler(CommandHandler("api_version", api_check_version))
@@ -825,11 +1015,11 @@ def main():
     # Admin commands
     app.add_handler(CommandHandler("set_file", set_file))
     app.add_handler(CommandHandler("broadcast", broadcast))
-    app.add_handler(CommandHandler("app_broadcast", app_broadcast))
     app.add_handler(CommandHandler("stats", stats))
     app.add_handler(CommandHandler("app_stats", app_stats))
     app.add_handler(CommandHandler("update_admin", update_admin))
     app.add_handler(CommandHandler("activate", activate_license))
+    app.add_handler(CommandHandler("request_license", request_license_activation))
     
     print("🚀 DATRIX Professional Bot Starting...")
     print(f"🤖 Bot Token: {BOT_TOKEN[:10]}...")
@@ -841,6 +1031,7 @@ def main():
     print("📡 Broadcast system ready")
     print("⌨️ Inline keyboard interface active")
     print("🔌 API endpoints for desktop app active")
+    print("🔑 License request system active")
     print("✅ Bot is ready and listening for messages!")
     
     app.run_polling(drop_pending_updates=True)
