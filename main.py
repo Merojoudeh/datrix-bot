@@ -1,63 +1,19 @@
-from telegram.ext import Application, CommandHandler, MessageHandler, filters
+from telegram.ext import Application, CommandHandler
 import os
 import logging
-import json
 from datetime import datetime
 
 # Set up logging
 logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', 
-    level=logging.INFO,
-    handlers=[
-        logging.FileHandler('bot.log'),
-        logging.StreamHandler()
-    ]
+    level=logging.INFO
 )
 logger = logging.getLogger(__name__)
 
-# Default configuration (can be overridden by config file)
-DEFAULT_CONFIG = {
-    'BOT_TOKEN': '7803291138:AAExEBQq9uZhq6X_ncI_c8E2J80-tpZtq8E',
-    'ADMIN_CHAT_ID': '811896458',
-    'STORAGE_CHANNEL_ID': '-1002807912676'
-}
-
-# Load configuration
-def load_config():
-    try:
-        if os.path.exists('config.json'):
-            with open('config.json', 'r') as f:
-                config = json.load(f)
-                logger.info("✅ Loaded configuration from config.json")
-                return config
-    except Exception as e:
-        logger.warning(f"⚠️ Could not load config.json: {e}")
-    
-    # Use environment variables or defaults
-    config = {
-        'BOT_TOKEN': os.environ.get('BOT_TOKEN', DEFAULT_CONFIG['BOT_TOKEN']),
-        'ADMIN_CHAT_ID': os.environ.get('ADMIN_CHAT_ID', DEFAULT_CONFIG['ADMIN_CHAT_ID']),
-        'STORAGE_CHANNEL_ID': os.environ.get('STORAGE_CHANNEL_ID', DEFAULT_CONFIG['STORAGE_CHANNEL_ID'])
-    }
-    logger.info("✅ Using default/environment configuration")
-    return config
-
-# Save configuration
-def save_config(config):
-    try:
-        with open('config.json', 'w') as f:
-            json.dump(config, f, indent=2)
-        logger.info("✅ Configuration saved to config.json")
-        return True
-    except Exception as e:
-        logger.error(f"❌ Could not save config: {e}")
-        return False
-
-# Load initial config
-CONFIG = load_config()
-BOT_TOKEN = CONFIG['BOT_TOKEN']
-ADMIN_CHAT_ID = CONFIG['ADMIN_CHAT_ID']
-STORAGE_CHANNEL_ID = CONFIG['STORAGE_CHANNEL_ID']
+# Configuration - Fixed values
+BOT_TOKEN = '7803291138:AAExEBQq9uZhq6X_ncI_c8E2J80-tpZtq8E'
+ADMIN_CHAT_ID = '811896458'
+STORAGE_CHANNEL_ID = '-1002807912676'
 
 # File storage
 STORED_FILES = {
@@ -89,7 +45,7 @@ async def start(update, context):
 💡 **How it works:** Files are stored in our cloud channel and forwarded instantly to you!"""
         
         await update.message.reply_text(message, parse_mode='Markdown')
-        logger.info(f"✅ /start command used by {update.effective_user.id} ({update.effective_user.username})")
+        logger.info(f"✅ /start command used by {update.effective_user.id}")
         
     except Exception as e:
         logger.error(f"❌ Error in start command: {e}")
@@ -158,7 +114,7 @@ async def get_datrix_app(update, context):
             parse_mode='Markdown'
         )
         
-        logger.info(f"✅ DATRIX app delivered to user {update.effective_user.id} ({update.effective_user.username})")
+        logger.info(f"✅ DATRIX app delivered to user {update.effective_user.id}")
         
     except Exception as e:
         logger.error(f"❌ Error delivering file to {update.effective_user.id}: {e}")
@@ -189,12 +145,10 @@ async def set_file_info(update, context):
         size = context.args[2] if len(context.args) > 2 else "Unknown"
         
         # Update file info
-        STORED_FILES['datrix_app'].update({
-            'message_id': message_id,
-            'version': version,
-            'size': size,
-            'upload_date': datetime.now().strftime("%Y-%m-%d %H:%M")
-        })
+        STORED_FILES['datrix_app']['message_id'] = message_id
+        STORED_FILES['datrix_app']['version'] = version
+        STORED_FILES['datrix_app']['size'] = size
+        STORED_FILES['datrix_app']['upload_date'] = datetime.now().strftime("%Y-%m-%d %H:%M")
         
         await update.message.reply_text(
             f"✅ **File Information Updated!**\n\n"
@@ -214,55 +168,6 @@ async def set_file_info(update, context):
         await update.message.reply_text("❌ **Error:** Message ID must be a number", parse_mode='Markdown')
     except Exception as e:
         logger.error(f"❌ Error in set_file_info: {e}")
-        await update.message.reply_text(f"❌ **Error:** {str(e)}", parse_mode='Markdown')
-
-async def update_config(update, context):
-    """Update bot configuration (Admin only)"""
-    # FIXED: Move global declaration to the top of the function
-    global ADMIN_CHAT_ID, STORAGE_CHANNEL_ID, CONFIG
-    
-    user_id = str(update.effective_user.id)
-    if user_id != ADMIN_CHAT_ID:
-        await update.message.reply_text("⛔ **Admin access required.**", parse_mode='Markdown')
-        return
-    
-    if len(context.args) < 2:
-        await update.message.reply_text(
-            "📝 **Usage:** `/update_config [key] [value]`\n\n"
-            "**Available keys:**\n"
-            "• `admin_id` - Admin chat ID\n"
-            "• `channel_id` - Storage channel ID\n\n"
-            "**Example:** `/update_config admin_id 123456789`",
-            parse_mode='Markdown'
-        )
-        return
-    
-    try:
-        key = context.args[0].lower()
-        value = context.args[1]
-        
-        if key == 'admin_id':
-            CONFIG['ADMIN_CHAT_ID'] = value
-            ADMIN_CHAT_ID = value
-            if save_config(CONFIG):
-                await update.message.reply_text(f"✅ **Admin ID updated to:** `{value}`", parse_mode='Markdown')
-            else:
-                await update.message.reply_text("❌ **Error saving configuration**", parse_mode='Markdown')
-                
-        elif key == 'channel_id':
-            CONFIG['STORAGE_CHANNEL_ID'] = value
-            STORAGE_CHANNEL_ID = value
-            if save_config(CONFIG):
-                await update.message.reply_text(f"✅ **Storage Channel ID updated to:** `{value}`", parse_mode='Markdown')
-            else:
-                await update.message.reply_text("❌ **Error saving configuration**", parse_mode='Markdown')
-        else:
-            await update.message.reply_text(f"❌ **Unknown key:** `{key}`", parse_mode='Markdown')
-        
-        logger.info(f"✅ Admin updated config: {key} = {value}")
-        
-    except Exception as e:
-        logger.error(f"❌ Error updating config: {e}")
         await update.message.reply_text(f"❌ **Error:** {str(e)}", parse_mode='Markdown')
 
 async def status(update, context):
@@ -310,10 +215,6 @@ async def help_command(update, context):
 
 **File Management:**
 • `/set_file [msg_id] [version] [size]` - Set file info for forwarding
-• `/update_version [version]` - Update version number only
-
-**Configuration:**
-• `/update_config [key] [value]` - Update bot settings
 
 **Monitoring:**
 • `/status` - Detailed bot status
@@ -360,25 +261,6 @@ Contact the administrator if you experience any issues."""
         logger.error(f"❌ Error in help command: {e}")
         await update.message.reply_text("❌ Sorry, there was an error. Please try again.")
 
-async def error_handler(update, context):
-    """Log errors caused by Updates."""
-    logger.error(f'Update {update} caused error {context.error}')
-    
-    # Try to notify admin about errors
-    try:
-        if update and update.effective_chat:
-            await context.bot.send_message(
-                chat_id=ADMIN_CHAT_ID,
-                text=f"⚠️ **Bot Error Report**\n\n"
-                     f"**Error:** `{context.error}`\n"
-                     f"**User:** {update.effective_user.id if update.effective_user else 'Unknown'}\n"
-                     f"**Chat:** {update.effective_chat.id}\n"
-                     f"**Time:** {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
-                parse_mode='Markdown'
-            )
-    except:
-        logger.error("Could not send error notification to admin")
-
 def main():
     """Start the bot."""
     try:
@@ -391,11 +273,7 @@ def main():
         application.add_handler(CommandHandler("list_files", list_files))
         application.add_handler(CommandHandler("datrix_app", get_datrix_app))
         application.add_handler(CommandHandler("set_file", set_file_info))
-        application.add_handler(CommandHandler("update_config", update_config))
         application.add_handler(CommandHandler("status", status))
-        
-        # Add error handler
-        application.add_error_handler(error_handler)
         
         print("🚀 DATRIX Bot Starting...")
         print(f"🤖 Bot Token: {BOT_TOKEN[:10]}...")
