@@ -5,6 +5,7 @@ import json
 import os
 import time
 import requests
+import tempfile
 from datetime import datetime, timedelta
 import re
 
@@ -230,7 +231,7 @@ async def callback_query_handler(update, context):
         await handle_back_to_menu(query, context)
 
 async def handle_license_callback(query, context, callback_data):
-    """Handle license request callbacks"""
+    """Handle license request callbacks - UPDATED FOR FILE CREATION"""
     try:
         logger.info(f"Processing license callback: {callback_data}")
         
@@ -284,9 +285,49 @@ async def handle_license_callback(query, context, callback_data):
             
             await query.edit_message_text(new_text, parse_mode='Markdown')
             
-            # Send confirmation
-            confirmation = f"✅ License activated for Google Sheet ID: {google_sheet_id}\n📅 Valid until: {expiry_date}"
-            await context.bot.send_message(chat_id=chat_id, text=confirmation)
+            # **NEW: Create license activation file for desktop app**
+            try:
+                # Create license activation file in system temp directory
+                temp_dir = tempfile.gettempdir()
+                license_file_name = f"datrix_license_activation_{google_sheet_id}.json"
+                license_command_file = os.path.join(temp_dir, license_file_name)
+                
+                # Extract user info from original message if available
+                user_match = re.search(r'User: ([^\n]+)', original_message_text)
+                company_match = re.search(r'Company: ([^\n]+)', original_message_text)
+                
+                user_name = user_match.group(1) if user_match else "Telegram_User"
+                company_name = company_match.group(1) if company_match else "Telegram_Company"
+                
+                license_activation_data = {
+                    "action": "activate_license",
+                    "google_sheet_id": google_sheet_id,
+                    "license_expires": expiry_date,
+                    "license_key": f"TELEGRAM_APPROVED_{request_timestamp}",
+                    "is_active": True,
+                    "activation_timestamp": datetime.now().isoformat(),
+                    "days_granted": days,
+                    "license_email": "admin@datrix.com",
+                    "user": user_name.replace('_', ' '),
+                    "company": company_name.replace('_', ' '),
+                    "activation_method": "telegram_bot_deployed"
+                }
+                
+                with open(license_command_file, 'w') as f:
+                    json.dump(license_activation_data, f, indent=2)
+                
+                logger.info(f"✅ License activation file created: {license_command_file}")
+                
+                # Send confirmation with file creation info
+                confirmation = f"✅ License activated for Google Sheet ID: {google_sheet_id}\n📅 Valid until: {expiry_date}\n📁 Activation file created for desktop app\n\n🔍 File: {license_file_name}"
+                await context.bot.send_message(chat_id=chat_id, text=confirmation)
+                
+            except Exception as file_error:
+                logger.error(f"❌ Error creating license activation file: {file_error}")
+                
+                # Send confirmation without file creation
+                confirmation = f"✅ License activated for Google Sheet ID: {google_sheet_id}\n📅 Valid until: {expiry_date}\n⚠️ Note: Could not create activation file - manual activation may be required"
+                await context.bot.send_message(chat_id=chat_id, text=confirmation)
             
             # Update app user if found
             user_updated = False
@@ -440,7 +481,8 @@ async def handle_admin_help(query, context):
     help_text += "`/app_stats` - Show app user statistics\n"
     help_text += "`/update_admin [username]` - Update admin username\n"
     help_text += "`/activate [sheet_id] [yyyy-mm-dd]` - Activate app license\n"
-    help_text += "`/request_license` - Test license request\n\n"
+    help_text += "`/request_license` - Test license request\n"
+    help_text += "`/clear_temp_files` - Clear temporary license files\n\n"
     help_text += "**API Commands (for DATRIX app):**\n"
     help_text += "`/api_version` - Get latest version info\n"
     help_text += "`/api_register` - Register app user\n\n"
@@ -816,7 +858,7 @@ async def api_activate_license(update, context):
         await update.message.reply_text(f"API_RESPONSE: {json.dumps(error_response)}")
         
 async def request_license_activation(update, context):
-    """Send a license activation request with buttons"""
+    """Send a license activation request with buttons - UPDATED FOR DESKTOP APP INTEGRATION"""
     try:
         if len(context.args) < 3:
             await update.message.reply_text(
@@ -851,6 +893,7 @@ async def request_license_activation(update, context):
 🏢 **Company:** {company}
 📊 **Sheet ID:** {sheet_id}
 ⏰ **Requested:** {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
+🖥️ **Source:** Desktop Application
 
 Please select an option below to respond to this request."""
         
@@ -1108,6 +1151,46 @@ async def activate_license(update, context):
             parse_mode='Markdown'
         )
 
+async def clear_temp_files(update, context):
+    """Clear temporary license activation files"""
+    user_id = str(update.effective_user.id)
+    if user_id != ADMIN_ID:
+        return
+    
+    try:
+        temp_dir = tempfile.gettempdir()
+        pattern = os.path.join(temp_dir, "datrix_license_activation_*.json")
+        files = glob.glob(pattern)
+        
+        if not files:
+            await update.message.reply_text(
+                "📁 **No temporary license files found.**",
+                parse_mode='Markdown'
+            )
+            return
+        
+        cleared_count = 0
+        for file_path in files:
+            try:
+                os.remove(file_path)
+                cleared_count += 1
+                logger.info(f"Removed temp file: {file_path}")
+            except Exception as e:
+                logger.error(f"Error removing {file_path}: {e}")
+        
+        await update.message.reply_text(
+            f"✅ **Temporary Files Cleared**\n\n"
+            f"🗑️ **Removed:** {cleared_count} files\n"
+            f"📁 **Location:** {temp_dir}",
+            parse_mode='Markdown'
+        )
+        
+    except Exception as e:
+        await update.message.reply_text(
+            f"❌ **Error clearing files:** {str(e)}",
+            parse_mode='Markdown'
+        )
+
 def main():
     load_users()
     load_settings()
@@ -1133,6 +1216,7 @@ def main():
     app.add_handler(CommandHandler("update_admin", update_admin))
     app.add_handler(CommandHandler("activate", activate_license))
     app.add_handler(CommandHandler("request_license", request_license_activation))
+    app.add_handler(CommandHandler("clear_temp_files", clear_temp_files))
     
     print("🚀 DATRIX Professional Bot Starting...")
     print(f"🤖 Bot Token: {BOT_TOKEN[:10]}...")
@@ -1144,7 +1228,8 @@ def main():
     print("📡 Broadcast system ready")
     print("⌨️ Inline keyboard interface active")
     print("🔌 API endpoints for desktop app active")
-    print("🔑 License request system active")
+    print("🔑 License request system active with file-based activation")
+    print("📁 Temporary license file support enabled")
     print("✅ Bot is ready and listening for messages!")
     
     app.run_polling(drop_pending_updates=True)
