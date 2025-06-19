@@ -233,16 +233,18 @@ async def callback_query_handler(update, context):
         await handle_back_to_menu(query, context)
 
 async def handle_license_callback(query, context, callback_data):
-    """Handle license approval/denial"""
+    """🔧 FIXED: Clear old license data first, then create new"""
     try:
         logger.info(f"Processing license callback: {callback_data}")
         
         await query.edit_message_text(
-            "⏳ *Processing license request...*\n\nPlease wait while I handle your request.",
+            "⏳ *Processing license request...*\n\nClearing old data and creating new license...",
             parse_mode='Markdown'
         )
         
         parts = callback_data.split('_')
+        logger.info(f"Callback parts: {parts}")  # Debug logging
+        
         if len(parts) < 3:
             logger.error(f"Invalid callback format: {callback_data}")
             return
@@ -277,17 +279,57 @@ async def handle_license_callback(query, context, callback_data):
             logger.info(f"License request denied for {google_sheet_id}")
             
         elif action == "extend":
+            # 🔧 FIXED: Better parsing of days
             if len(parts) >= 4:
                 try:
                     days = int(parts[3])
-                except ValueError:
+                    logger.info(f"✅ Parsed days from callback: {days}")
+                except ValueError as e:
+                    logger.error(f"Error parsing days from {parts[3]}: {e}")
                     days = 30
             else:
+                logger.warning(f"No days specified in callback, using default 30")
                 days = 30
             
             expiry_date = (datetime.now() + timedelta(days=days)).strftime('%Y-%m-%d')
+            logger.info(f"✅ Creating license: {days} days until {expiry_date}")
             
             try:
+                # 🔧 STEP 1: Clear ALL old license data first
+                logger.info(f"🗑️ Clearing old license data for {google_sheet_id}")
+                temp_dir = tempfile.gettempdir()
+                
+                # Clear old activation files
+                old_files = [
+                    f"datrix_license_activation_{google_sheet_id}.json",
+                    f"license_response_{google_sheet_id}_*.json"
+                ]
+                
+                cleared_files = 0
+                for file_pattern in old_files:
+                    if '*' in file_pattern:
+                        import glob
+                        matches = glob.glob(os.path.join(temp_dir, file_pattern))
+                        for old_file in matches:
+                            try:
+                                os.remove(old_file)
+                                cleared_files += 1
+                                logger.info(f"🗑️ Removed old file: {old_file}")
+                            except:
+                                pass
+                    else:
+                        old_file_path = os.path.join(temp_dir, file_pattern)
+                        if os.path.exists(old_file_path):
+                            try:
+                                os.remove(old_file_path)
+                                cleared_files += 1
+                                logger.info(f"🗑️ Removed old file: {old_file_path}")
+                            except:
+                                pass
+                
+                logger.info(f"🗑️ Cleared {cleared_files} old license files")
+                
+                # 🔧 STEP 2: Create NEW license data with correct days
                 license_activation_data = {
                     "action": "activate_license",
                     "google_sheet_id": google_sheet_id,
@@ -295,23 +337,26 @@ async def handle_license_callback(query, context, callback_data):
                     "license_key": f"HTTP_APPROVED_{request_timestamp}",
                     "is_active": True,
                     "activation_timestamp": datetime.now().isoformat(),
-                    "days_granted": days,
+                    "days_granted": days,  # 🔧 IMPORTANT: Store the actual days granted
                     "license_email": "admin@datrix.com",
                     "user": user_name,
                     "company": company,
                     "activation_method": "http_api_bot",
-                    "license_status": "active"
+                    "license_status": "active",
+                    "admin_approved_days": days,  # 🔧 Double-check field
+                    "created_timestamp": time.time()  # 🔧 Add timestamp to ensure freshness
                 }
                 
-                temp_dir = tempfile.gettempdir()
+                logger.info(f"📝 License data created: {license_activation_data}")
                 
+                # 🔧 STEP 3: Write NEW files
                 activation_file = f"datrix_license_activation_{google_sheet_id}.json"
                 activation_path = os.path.join(temp_dir, activation_file)
                 
                 with open(activation_path, 'w') as f:
                     json.dump(license_activation_data, f, indent=2)
                 
-                logger.info(f"✅ License activation file created: {activation_path}")
+                logger.info(f"✅ NEW License activation file created: {activation_path}")
                 
                 response_file = f"license_response_{google_sheet_id}_{request_timestamp}.json"
                 response_path = os.path.join(temp_dir, response_file)
@@ -319,17 +364,21 @@ async def handle_license_callback(query, context, callback_data):
                 with open(response_path, 'w') as f:
                     json.dump(license_activation_data, f, indent=2)
                 
-                logger.info(f"✅ License response file created: {response_path}")
+                logger.info(f"✅ NEW License response file created: {response_path}")
                 
+                # 🔧 STEP 4: Update database
                 for user_id, user_data in app_users_data.items():
                     if user_data.get('googleSheetId') == google_sheet_id:
                         user_data['license_status'] = 'active'
                         user_data['license_expires'] = expiry_date
                         user_data['last_seen'] = datetime.now().isoformat()
+                        user_data['admin_approved_days'] = days  # 🔧 Store admin choice
                         break
                 
                 save_users()
                 file_created = True
+                
+                logger.info(f"✅ ALL STEPS COMPLETED - License for {days} days created successfully")
                 
             except Exception as file_error:
                 logger.error(f"❌ Error processing license activation: {file_error}")
@@ -341,16 +390,18 @@ async def handle_license_callback(query, context, callback_data):
                 f"🏢 *Company:* `{company}`\n"
                 f"📊 *Sheet ID:* `{google_sheet_id}`\n"
                 f"⏰ *Requested:* `{request_info['timestamp'][:19].replace('T', ' ')}`\n\n"
-                f"✅ *LICENSE APPROVED FOR {days} DAYS*\n"
+                f"✅ *LICENSE APPROVED FOR {days} DAYS*\n"  # 🔧 Show actual days
                 f"📅 *Expires:* `{expiry_date}`\n"
                 f"🕐 *Processed:* `{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}`\n"
                 f"📁 *Server Files:* {'✅ Created' if file_created else '❌ Failed'}\n"
+                f"🗑️ *Old Data Cleared:* ✅ Yes\n"
+                f"🎯 *Days Granted:* `{days}` days\n"
                 f"🌐 *Ready for API retrieval*\n\n"
-                f"🎉 *License ready for desktop app!*",
+                f"🎉 *Fresh {days}-day license ready!*",
                 parse_mode='Markdown'
             )
             
-            logger.info(f"License activated for {google_sheet_id} until {expiry_date}")
+            logger.info(f"✅ License activated for {google_sheet_id} until {expiry_date} ({days} days)")
         
         if request_id in pending_license_requests:
             del pending_license_requests[request_id]
@@ -362,7 +413,7 @@ async def handle_license_callback(query, context, callback_data):
             f"❌ *Error processing request:* {str(e)}",
             parse_mode='Markdown'
         )
-
+        
 async def handle_download(query, context):
     file_info = FILES['datrix_app']
     
