@@ -141,6 +141,13 @@ FILES = {
     }
 }
 
+def escape_markdown_v2(text):
+    """Escape special characters for MarkdownV2"""
+    escape_chars = ['_', '*', '[', ']', '(', ')', '~', '`', '>', '#', '+', '-', '=', '|', '{', '}', '.', '!']
+    for char in escape_chars:
+        text = text.replace(char, f'\\{char}')
+    return text
+
 def create_main_keyboard():
     keyboard = [
         [
@@ -184,10 +191,10 @@ async def start(update, context):
     add_user(update.effective_user)
     user_id = str(update.effective_user.id)
     
-    welcome_msg = f"🤖 **{BOT_SETTINGS['bot_name']}**\n\n"
+    welcome_msg = f"🤖 *{BOT_SETTINGS['bot_name']}*\n\n"
     welcome_msg += f"👋 Hello {update.effective_user.first_name}!\n\n"
     welcome_msg += f"{BOT_SETTINGS['welcome_message']}\n\n"
-    welcome_msg += "🎯 **Choose an option below:**"
+    welcome_msg += "🎯 *Choose an option below:*"
     
     keyboard = create_admin_keyboard() if user_id == ADMIN_ID else create_main_keyboard()
     
@@ -233,14 +240,13 @@ async def callback_query_handler(update, context):
         await handle_back_to_menu(query, context)
 
 async def handle_license_callback(query, context, callback_data):
-    """Handle license request callbacks - ENHANCED WITH BETTER FEEDBACK"""
+    """Handle license request callbacks - FIXED MARKDOWN FORMATTING"""
     try:
         logger.info(f"Processing license callback: {callback_data}")
         
         # Show immediate processing feedback
         await query.edit_message_text(
-            f"⏳ **Processing license request...**\n\n"
-            f"Please wait while I handle your request.",
+            "⏳ *Processing license request...*\n\nPlease wait while I handle your request.",
             parse_mode='Markdown'
         )
         
@@ -258,7 +264,7 @@ async def handle_license_callback(query, context, callback_data):
         request_info = pending_license_requests.get(request_id)
         if not request_info:
             await query.edit_message_text(
-                "❌ **Error:** Request not found or already processed",
+                "❌ *Error:* Request not found or already processed",
                 parse_mode='Markdown'
             )
             return
@@ -268,16 +274,15 @@ async def handle_license_callback(query, context, callback_data):
         company = request_info['company']
         
         if action == "deny":
-            # Handle denial
+            # Handle denial - FIXED MARKDOWN
             await query.edit_message_text(
-                f"🔑 **DATRIX LICENSE REQUEST**\n"
-                f"━━━━━━━━━━━━━━━\n"
-                f"👤 **User:** {user_name}\n"
-                f"🏢 **Company:** {company}\n"
-                f"📊 **Sheet ID:** {google_sheet_id}\n"
-                f"⏰ **Requested:** {request_info['timestamp'][:19].replace('T', ' ')}\n\n"
-                f"❌ **LICENSE REQUEST DENIED**\n"
-                f"🕐 **Processed:** {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
+                f"🔑 *DATRIX LICENSE REQUEST*\n\n"
+                f"👤 *User:* `{user_name}`\n"
+                f"🏢 *Company:* `{company}`\n"
+                f"📊 *Sheet ID:* `{google_sheet_id}`\n"
+                f"⏰ *Requested:* `{request_info['timestamp'][:19].replace('T', ' ')}`\n\n"
+                f"❌ *LICENSE REQUEST DENIED*\n"
+                f"🕐 *Processed:* `{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}`",
                 parse_mode='Markdown'
             )
             
@@ -328,29 +333,28 @@ async def handle_license_callback(query, context, callback_data):
                 logger.error(f"❌ Error creating license activation file: {file_error}")
                 file_created = False
             
-            # Update message with success
+            # Update message with success - FIXED MARKDOWN
             await query.edit_message_text(
-                f"🔑 **DATRIX LICENSE REQUEST**\n"
-                f"━━━━━━━━━━━━━━━\n"
-                f"👤 **User:** {user_name}\n"
-                f"🏢 **Company:** {company}\n"
-                f"📊 **Sheet ID:** {google_sheet_id}\n"
-                f"⏰ **Requested:** {request_info['timestamp'][:19].replace('T', ' ')}\n\n"
-                f"✅ **LICENSE APPROVED FOR {days} DAYS**\n"
-                f"📅 **Expires:** {expiry_date}\n"
-                f"🕐 **Processed:** {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n"
-                f"📁 **Activation File:** {'✅ Created' if file_created else '❌ Failed'}\n\n"
-                f"🎉 **License is now active for the desktop app!**",
+                f"🔑 *DATRIX LICENSE REQUEST*\n\n"
+                f"👤 *User:* `{user_name}`\n"
+                f"🏢 *Company:* `{company}`\n"
+                f"📊 *Sheet ID:* `{google_sheet_id}`\n"
+                f"⏰ *Requested:* `{request_info['timestamp'][:19].replace('T', ' ')}`\n\n"
+                f"✅ *LICENSE APPROVED FOR {days} DAYS*\n"
+                f"📅 *Expires:* `{expiry_date}`\n"
+                f"🕐 *Processed:* `{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}`\n"
+                f"📁 *Activation File:* {'✅ Created' if file_created else '❌ Failed'}\n\n"
+                f"🎉 *License is now active for the desktop app!*",
                 parse_mode='Markdown'
             )
             
-            # Send additional confirmation message
+            # Send additional confirmation message - FIXED MARKDOWN
             confirmation_text = (
-                f"🎊 **License Successfully Activated!**\n\n"
-                f"📊 **Google Sheet ID:** `{google_sheet_id}`\n"
-                f"📅 **Valid Until:** {expiry_date}\n"
-                f"⏳ **Duration:** {days} days\n"
-                f"📁 **File:** {license_file_name}\n\n"
+                f"🎊 *License Successfully Activated!*\n\n"
+                f"📊 *Google Sheet ID:* `{google_sheet_id}`\n"
+                f"📅 *Valid Until:* `{expiry_date}`\n"
+                f"⏳ *Duration:* `{days} days`\n"
+                f"📁 *File:* `{license_file_name}`\n\n"
                 f"{'✅ Desktop app will automatically detect the new license!' if file_created else '⚠️ Manual activation may be required - file creation failed'}"
             )
             
@@ -384,7 +388,7 @@ async def handle_license_callback(query, context, callback_data):
     except Exception as e:
         logger.error(f"Error processing license callback: {e}")
         await query.edit_message_text(
-            f"❌ **Error processing request:** {str(e)}",
+            f"❌ *Error processing request:* {str(e)}",
             parse_mode='Markdown'
         )
 
@@ -394,7 +398,7 @@ async def handle_download(query, context):
     if not file_info['message_id']:
         keyboard = [[InlineKeyboardButton("🔙 Back to Menu", callback_data="back_to_menu")]]
         await query.edit_message_text(
-            "❌ **File Currently Unavailable**\n\n"
+            "❌ *File Currently Unavailable*\n\n"
             f"📧 Please contact @{BOT_SETTINGS['admin_username']} for assistance.",
             parse_mode='Markdown',
             reply_markup=InlineKeyboardMarkup(keyboard)
@@ -414,12 +418,12 @@ async def handle_download(query, context):
         keyboard = [[InlineKeyboardButton("🔙 Back to Menu", callback_data="back_to_menu")]]
         
         await query.edit_message_text(
-            f"✅ **{file_info['description']} Delivered!**\n\n"
-            f"🔢 **Version:** {file_info['version']}\n"
-            f"💾 **Size:** {file_info['size']}\n"
-            f"⚡ **Status:** Delivered instantly\n"
-            f"📊 **Downloads:** {file_info['download_count']}\n\n"
-            f"🚀 **Enjoy using DATRIX!**",
+            f"✅ *{file_info['description']} Delivered!*\n\n"
+            f"🔢 *Version:* `{file_info['version']}`\n"
+            f"💾 *Size:* `{file_info['size']}`\n"
+            f"⚡ *Status:* Delivered instantly\n"
+            f"📊 *Downloads:* `{file_info['download_count']}`\n\n"
+            f"🚀 *Enjoy using DATRIX!*",
             parse_mode='Markdown',
             reply_markup=InlineKeyboardMarkup(keyboard)
         )
@@ -429,14 +433,14 @@ async def handle_download(query, context):
     except Exception as e:
         keyboard = [[InlineKeyboardButton("🔙 Back to Menu", callback_data="back_to_menu")]]
         await query.edit_message_text(
-            "❌ **Download Error**\n\nSorry, there was an error. Please try again or contact support.",
+            "❌ *Download Error*\n\nSorry, there was an error. Please try again or contact support.",
             parse_mode='Markdown',
             reply_markup=InlineKeyboardMarkup(keyboard)
         )
         logger.error(f"Error delivering file: {e}")
 
 async def handle_list_files(query, context):
-    text = "📂 **Available Files:**\n\n"
+    text = "📂 *Available Files:*\n\n"
     
     for key, info in FILES.items():
         if info['message_id']:
@@ -444,11 +448,11 @@ async def handle_list_files(query, context):
         else:
             status = "❌ Not available"
             
-        text += f"📄 **{info['description']}**\n"
+        text += f"📄 *{info['description']}*\n"
         text += f"🔢 Version: `{info['version']}`\n"
         text += f"💾 Size: `{info['size']}`\n"
         text += f"📊 Status: {status}\n"
-        text += f"📥 Downloads: {info['download_count']}\n\n"
+        text += f"📥 Downloads: `{info['download_count']}`\n\n"
     
     keyboard = [
         [InlineKeyboardButton("📥 Download DATRIX", callback_data="download_datrix")],
@@ -466,15 +470,15 @@ async def handle_status(query, context):
     file_info = FILES['datrix_app']
     file_status = "✅ Available" if file_info['message_id'] else "❌ Not configured"
     
-    status_msg = f"🟢 **System Status**\n\n"
-    status_msg += f"✅ **Status:** Online and Running\n"
-    status_msg += f"🌐 **Server:** Railway Cloud Platform\n"
-    status_msg += f"⏰ **Time:** `{uptime}`\n"
-    status_msg += f"📁 **DATRIX App:** {file_status}\n"
-    status_msg += f"🔢 **Version:** `{file_info['version']}`\n"
-    status_msg += f"💾 **Size:** `{file_info['size']}`\n"
-    status_msg += f"📥 **Downloads:** {file_info['download_count']}\n\n"
-    status_msg += f"👤 **User:** {query.from_user.first_name}"
+    status_msg = f"🟢 *System Status*\n\n"
+    status_msg += f"✅ *Status:* Online and Running\n"
+    status_msg += f"🌐 *Server:* Railway Cloud Platform\n"
+    status_msg += f"⏰ *Time:* `{uptime}`\n"
+    status_msg += f"📁 *DATRIX App:* {file_status}\n"
+    status_msg += f"🔢 *Version:* `{file_info['version']}`\n"
+    status_msg += f"💾 *Size:* `{file_info['size']}`\n"
+    status_msg += f"📥 *Downloads:* `{file_info['download_count']}`\n\n"
+    status_msg += f"👤 *User:* {query.from_user.first_name}"
     
     keyboard = [[InlineKeyboardButton("🔙 Back to Menu", callback_data="back_to_menu")]]
     
@@ -485,14 +489,14 @@ async def handle_status(query, context):
     )
 
 async def handle_help(query, context):
-    help_text = f"🤖 **{BOT_SETTINGS['bot_name']} Help**\n\n"
-    help_text += "**Available Options:**\n"
-    help_text += "📥 **Download DATRIX** - Get the latest version instantly\n"
-    help_text += "📋 **Available Files** - See what's available for download\n"
-    help_text += "📊 **Bot Status** - Check system status\n"
-    help_text += f"📞 **Contact Admin** - Get help from @{BOT_SETTINGS['admin_username']}\n\n"
-    help_text += "🎯 **How to use:** Simply click the buttons to navigate!\n\n"
-    help_text += "💡 **Tip:** You'll receive automatic updates when new versions are available."
+    help_text = f"🤖 *{BOT_SETTINGS['bot_name']} Help*\n\n"
+    help_text += "*Available Options:*\n"
+    help_text += "📥 *Download DATRIX* - Get the latest version instantly\n"
+    help_text += "📋 *Available Files* - See what's available for download\n"
+    help_text += "📊 *Bot Status* - Check system status\n"
+    help_text += f"📞 *Contact Admin* - Get help from @{BOT_SETTINGS['admin_username']}\n\n"
+    help_text += "🎯 *How to use:* Simply click the buttons to navigate!\n\n"
+    help_text += "💡 *Tip:* You'll receive automatic updates when new versions are available."
     
     keyboard = [[InlineKeyboardButton("🔙 Back to Menu", callback_data="back_to_menu")]]
     
@@ -503,8 +507,8 @@ async def handle_help(query, context):
     )
 
 async def handle_admin_help(query, context):
-    help_text = f"🔧 **Admin Commands:**\n\n"
-    help_text += "**Text Commands:**\n"
+    help_text = f"🔧 *Admin Commands:*\n\n"
+    help_text += "*Text Commands:*\n"
     help_text += "`/set_file [msg_id] [version] [size]` - Set file for forwarding\n"
     help_text += "`/broadcast [message]` - Send message to all users\n"
     help_text += "`/app_broadcast [message]` - Send to app users\n"
@@ -514,10 +518,10 @@ async def handle_admin_help(query, context):
     help_text += "`/activate [sheet_id] [yyyy-mm-dd]` - Activate app license\n"
     help_text += "`/request_license [user] [company] [sheet_id]` - Create license request\n"
     help_text += "`/clear_temp_files` - Clear temporary license files\n\n"
-    help_text += "**API Commands (for DATRIX app):**\n"
+    help_text += "*API Commands (for DATRIX app):*\n"
     help_text += "`/api_version` - Get latest version info\n"
     help_text += "`/api_register` - Register app user\n\n"
-    help_text += "**Examples:**\n"
+    help_text += "*Examples:*\n"
     help_text += "`/set_file 123 v2.1.7 125MB`\n"
     help_text += "`/broadcast New version available!`\n"
     help_text += "`/activate abc123xyz 2024-12-31`"
@@ -547,14 +551,14 @@ async def handle_admin_stats(query, context):
         except:
             pass
     
-    stats_msg = f"📊 **Telegram User Statistics**\n\n"
-    stats_msg += f"👥 **Total Users:** {total_users}\n"
-    stats_msg += f"💬 **Total Messages:** {total_messages}\n"
-    stats_msg += f"🕐 **Active (24h):** {recent_users}\n"
-    stats_msg += f"📁 **File Status:** {"✅ Ready" if FILES['datrix_app']['message_id'] else "❌ Not set"}\n"
-    stats_msg += f"🔢 **Current Version:** {FILES['datrix_app']['version']}\n"
-    stats_msg += f"📥 **Total Downloads:** {FILES['datrix_app']['download_count']}\n\n"
-    stats_msg += f"📈 **Avg Messages:** {total_messages/max(total_users, 1):.1f} per user"
+    stats_msg = f"📊 *Telegram User Statistics*\n\n"
+    stats_msg += f"👥 *Total Users:* `{total_users}`\n"
+    stats_msg += f"💬 *Total Messages:* `{total_messages}`\n"
+    stats_msg += f"🕐 *Active (24h):* `{recent_users}`\n"
+    stats_msg += f"📁 *File Status:* {"✅ Ready" if FILES['datrix_app']['message_id'] else "❌ Not set"}\n"
+    stats_msg += f"🔢 *Current Version:* `{FILES['datrix_app']['version']}`\n"
+    stats_msg += f"📥 *Total Downloads:* `{FILES['datrix_app']['download_count']}`\n\n"
+    stats_msg += f"📈 *Avg Messages:* `{total_messages/max(total_users, 1):.1f}` per user"
     
     keyboard = [[InlineKeyboardButton("🔙 Back to Menu", callback_data="back_to_menu")]]
     
@@ -581,23 +585,23 @@ async def handle_app_stats(query, context):
         except:
             pass
     
-    stats_msg = f"🖥️ **DATRIX App Statistics**\n\n"
-    stats_msg += f"👥 **Total App Users:** {total_app_users}\n"
-    stats_msg += f"✅ **Active Licenses:** {active_licenses}\n"
-    stats_msg += f"🕐 **Recent (7d):** {recent_app_users}\n"
-    stats_msg += f"📱 **Current App Version:** {BOT_SETTINGS['app_version']}\n\n"
+    stats_msg = f"🖥️ *DATRIX App Statistics*\n\n"
+    stats_msg += f"👥 *Total App Users:* `{total_app_users}`\n"
+    stats_msg += f"✅ *Active Licenses:* `{active_licenses}`\n"
+    stats_msg += f"🕐 *Recent (7d):* `{recent_app_users}`\n"
+    stats_msg += f"📱 *Current App Version:* `{BOT_SETTINGS['app_version']}`\n\n"
     
     if total_app_users > 0:
-        stats_msg += "**Recent Users:**\n"
+        stats_msg += "*Recent Users:*\n"
         sorted_users = sorted(app_users_data.values(), 
                             key=lambda x: x.get('last_seen', ''), reverse=True)[:5]
         for user in sorted_users:
             name = user.get('name', 'Unknown')[:15]
             company = user.get('company', 'Unknown')[:15]
             status = "✅" if user.get('license_status') == 'active' else "❌"
-            stats_msg += f"{status} {name} ({company})\n"
+            stats_msg += f"{status} `{name}` ({company})\n"
     else:
-        stats_msg += "**No app users registered yet.**\n"
+        stats_msg += "*No app users registered yet.*\n"
         stats_msg += "Users will appear here when DATRIX app connects to the bot."
     
     keyboard = [[InlineKeyboardButton("🔙 Back to Menu", callback_data="back_to_menu")]]
@@ -609,16 +613,16 @@ async def handle_app_stats(query, context):
     )
 
 async def handle_contact_admin(query, context):
-    contact_msg = f"📞 **Contact Administrator**\n\n"
-    contact_msg += f"👤 **Admin:** @{BOT_SETTINGS['admin_username']}\n\n"
-    contact_msg += "📝 **For support with:**\n"
+    contact_msg = f"📞 *Contact Administrator*\n\n"
+    contact_msg += f"👤 *Admin:* @{BOT_SETTINGS['admin_username']}\n\n"
+    contact_msg += "*For support with:*\n"
     contact_msg += "• Download issues\n"
     contact_msg += "• Technical problems\n"
     contact_msg += "• License activation\n"
     contact_msg += "• DATRIX app support\n"
     contact_msg += "• Feature requests\n\n"
-    contact_msg += f"💬 **Click here to message:** @{BOT_SETTINGS['admin_username']}\n\n"
-    contact_msg += "⏱️ **Response time:** Usually within 24 hours"
+    contact_msg += f"💬 *Click here to message:* @{BOT_SETTINGS['admin_username']}\n\n"
+    contact_msg += "⏱️ *Response time:* Usually within 24 hours"
     
     keyboard = [
         [InlineKeyboardButton(f"💬 Message @{BOT_SETTINGS['admin_username']}", url=f"https://t.me/{BOT_SETTINGS['admin_username']}")],
@@ -634,10 +638,10 @@ async def handle_contact_admin(query, context):
 async def handle_back_to_menu(query, context):
     user_id = str(query.from_user.id)
     
-    welcome_msg = f"🤖 **{BOT_SETTINGS['bot_name']}**\n\n"
+    welcome_msg = f"🤖 *{BOT_SETTINGS['bot_name']}*\n\n"
     welcome_msg += f"👋 Welcome back, {query.from_user.first_name}!\n\n"
     welcome_msg += f"{BOT_SETTINGS['welcome_message']}\n\n"
-    welcome_msg += "🎯 **Choose an option below:**"
+    welcome_msg += "🎯 *Choose an option below:*"
     
     keyboard = create_admin_keyboard() if user_id == ADMIN_ID else create_main_keyboard()
     
@@ -730,13 +734,13 @@ async def api_register_user(update, context):
             # Notify admin
             await context.bot.send_message(
                 chat_id=ADMIN_ID,
-                text=f"📱 **New DATRIX App User Registered**\n\n"
-                     f"👤 **Name:** {user_data.get('name', 'Unknown')}\n"
-                     f"🏢 **Company:** {user_data.get('company', 'Unknown')}\n"
-                     f"📊 **Sheet ID:** {user_data.get('googleSheetId', 'N/A')}\n"
-                     f"📱 **App Version:** {user_data.get('app_version', 'Unknown')}\n"
-                     f"🆔 **User ID:** {user_id}\n"
-                     f"📅 **Registered:** {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
+                text=f"📱 *New DATRIX App User Registered*\n\n"
+                     f"👤 *Name:* `{user_data.get('name', 'Unknown')}`\n"
+                     f"🏢 *Company:* `{user_data.get('company', 'Unknown')}`\n"
+                     f"📊 *Sheet ID:* `{user_data.get('googleSheetId', 'N/A')}`\n"
+                     f"📱 *App Version:* `{user_data.get('app_version', 'Unknown')}`\n"
+                     f"🆔 *User ID:* `{user_id}`\n"
+                     f"📅 *Registered:* `{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}`",
                 parse_mode='Markdown'
             )
             
@@ -763,10 +767,10 @@ async def api_report_error(update, context):
         # Send error report to admin
         await context.bot.send_message(
             chat_id=ADMIN_ID,
-            text=f"❌ **DATRIX App Error Report**\n\n"
-                 f"🕐 **Time:** {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n"
-                 f"📱 **Source:** Desktop Application\n"
-                 f"🔧 **Error:** {error_details}",
+            text=f"❌ *DATRIX App Error Report*\n\n"
+                 f"🕐 *Time:* `{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}`\n"
+                 f"📱 *Source:* Desktop Application\n"
+                 f"🔧 *Error:* `{error_details}`",
             parse_mode='Markdown'
         )
         
@@ -828,14 +832,14 @@ async def api_check_license(update, context):
         await update.message.reply_text(f"API_RESPONSE: {json.dumps(error_response)}")
 
 async def request_license_activation(update, context):
-    """FIXED: Send a license activation request with buttons - Works with app requests"""
+    """FIXED: Send a license activation request with buttons - FIXED MARKDOWN PARSING"""
     try:
         # Handle both manual admin usage and automatic app requests
         if len(context.args) < 1:
             await update.message.reply_text(
-                "📝 **Usage:** `/request_license [user_name] [company] [sheet_id]`\n\n"
-                "**Example:** `/request_license John_Doe ACME_Corp abc123xyz`\n"
-                "**Note:** Use N/A for unknown values",
+                "*Usage:* `/request_license [user_name] [company] [sheet_id]`\n\n"
+                "*Example:* `/request_license John_Doe ACME_Corp abc123xyz`\n"
+                "*Note:* Use N/A for unknown values",
                 parse_mode='Markdown'
             )
             return
@@ -852,7 +856,7 @@ async def request_license_activation(update, context):
             sheet_id = context.args[0]
         else:
             await update.message.reply_text(
-                "❌ **Error:** Invalid arguments. Please provide user_name, company, and sheet_id",
+                "❌ *Error:* Invalid arguments. Please provide user_name, company, and sheet_id",
                 parse_mode='Markdown'
             )
             return
@@ -877,16 +881,14 @@ async def request_license_activation(update, context):
         }
         save_users()
         
-        # Create the license request message
-        request_message = f"""🔑 **DATRIX LICENSE REQUEST**
-━━━━━━━━━━━━━━━
-👤 **User:** {user_name}
-🏢 **Company:** {company}
-📊 **Sheet ID:** {sheet_id}
-⏰ **Requested:** {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
-🖥️ **Source:** Desktop Application
-
-Please select an option below to respond to this request."""
+        # Create the license request message - FIXED MARKDOWN FORMATTING
+        request_message = f"🔑 *DATRIX LICENSE REQUEST*\n\n"
+        request_message += f"👤 *User:* `{user_name}`\n"
+        request_message += f"🏢 *Company:* `{company}`\n"
+        request_message += f"📊 *Sheet ID:* `{sheet_id}`\n"
+        request_message += f"⏰ *Requested:* `{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}`\n"
+        request_message += f"🖥️ *Source:* Desktop Application\n\n"
+        request_message += f"Please select an option below to respond to this request."
         
         # Create inline keyboard with approval options
         keyboard = [
@@ -938,8 +940,8 @@ async def set_file(update, context):
     
     if not context.args:
         await update.message.reply_text(
-            "📝 **Usage:** `/set_file [message_id] [version] [size]`\n\n"
-            "**Example:** `/set_file 123 v2.1.7 125MB`",
+            "*Usage:* `/set_file [message_id] [version] [size]`\n\n"
+            "*Example:* `/set_file 123 v2.1.7 125MB`",
             parse_mode='Markdown'
         )
         return
@@ -955,18 +957,18 @@ async def set_file(update, context):
         BOT_SETTINGS['app_version'] = version
         
         await update.message.reply_text(
-            f"✅ **File Configuration Updated**\n\n"
-            f"🆔 **Message ID:** `{message_id}`\n"
-            f"🔢 **Version:** `{version}`\n"
-            f"💾 **Size:** `{size}`\n\n"
-            f"🚀 **File is now available for all users!**",
+            f"✅ *File Configuration Updated*\n\n"
+            f"🆔 *Message ID:* `{message_id}`\n"
+            f"🔢 *Version:* `{version}`\n"
+            f"💾 *Size:* `{size}`\n\n"
+            f"🚀 *File is now available for all users!*",
             parse_mode='Markdown'
         )
         
         logger.info(f"Admin updated file: ID={message_id}, Version={version}")
         
     except ValueError:
-        await update.message.reply_text("❌ **Error:** Message ID must be a number", parse_mode='Markdown')
+        await update.message.reply_text("❌ *Error:* Message ID must be a number", parse_mode='Markdown')
 
 async def broadcast(update, context):
     user_id = str(update.effective_user.id)
@@ -975,8 +977,8 @@ async def broadcast(update, context):
     
     if not context.args:
         await update.message.reply_text(
-            "📝 **Usage:** `/broadcast [message]`\n\n"
-            "**Example:** `/broadcast New DATRIX version available!`",
+            "*Usage:* `/broadcast [message]`\n\n"
+            "*Example:* `/broadcast New DATRIX version available!`",
             parse_mode='Markdown'
         )
         return
@@ -987,9 +989,9 @@ async def broadcast(update, context):
     
     load_users()
     
-    await update.message.reply_text("📡 **Sending broadcast to Telegram users...**", parse_mode='Markdown')
+    await update.message.reply_text("📡 *Sending broadcast to Telegram users...*", parse_mode='Markdown')
     
-    broadcast_text = f"📢 **{BOT_SETTINGS['bot_name']} Update**\n\n{message}"
+    broadcast_text = f"📢 *{BOT_SETTINGS['bot_name']} Update*\n\n{message}"
     keyboard = create_main_keyboard()
     
     for user_id_str, user_info in users_data.items():
@@ -1008,10 +1010,10 @@ async def broadcast(update, context):
             failed_count += 1
     
     await update.message.reply_text(
-        f"✅ **Telegram Broadcast Complete!**\n\n"
-        f"📤 **Sent:** {sent_count} messages\n"
-        f"❌ **Failed:** {failed_count} messages\n"
-        f"👥 **Total Users:** {len(users_data) - 1}",
+        f"✅ *Telegram Broadcast Complete!*\n\n"
+        f"📤 *Sent:* `{sent_count}` messages\n"
+        f"❌ *Failed:* `{failed_count}` messages\n"
+        f"👥 *Total Users:* `{len(users_data) - 1}`",
         parse_mode='Markdown'
     )
 
@@ -1048,19 +1050,19 @@ async def stats(update, context):
         except:
             pass
     
-    stats_msg = f"📊 **Complete Statistics**\n\n"
-    stats_msg += f"**Telegram Users:**\n"
-    stats_msg += f"👥 **Total:** {total_users}\n"
-    stats_msg += f"💬 **Messages:** {total_messages}\n"
-    stats_msg += f"🕐 **Active (24h):** {recent_users}\n\n"
-    stats_msg += f"**App Users:**\n"
-    stats_msg += f"🖥️ **Total:** {total_app_users}\n"
-    stats_msg += f"🕐 **Recent (7d):** {recent_app_users}\n\n"
-    stats_msg += f"**System:**\n"
-    stats_msg += f"📁 **File Status:** {"✅ Ready" if FILES['datrix_app']['message_id'] else "❌ Not set"}\n"
-    stats_msg += f"🔢 **Version:** {FILES['datrix_app']['version']}\n"
-    stats_msg += f"📥 **Downloads:** {FILES['datrix_app']['download_count']}\n\n"
-    stats_msg += f"🤖 **Admin:** @{BOT_SETTINGS['admin_username']}"
+    stats_msg = f"📊 *Complete Statistics*\n\n"
+    stats_msg += f"*Telegram Users:*\n"
+    stats_msg += f"👥 *Total:* `{total_users}`\n"
+    stats_msg += f"💬 *Messages:* `{total_messages}`\n"
+    stats_msg += f"🕐 *Active (24h):* `{recent_users}`\n\n"
+    stats_msg += f"*App Users:*\n"
+    stats_msg += f"🖥️ *Total:* `{total_app_users}`\n"
+    stats_msg += f"🕐 *Recent (7d):* `{recent_app_users}`\n\n"
+    stats_msg += f"*System:*\n"
+    stats_msg += f"📁 *File Status:* {"✅ Ready" if FILES['datrix_app']['message_id'] else "❌ Not set"}\n"
+    stats_msg += f"🔢 *Version:* `{FILES['datrix_app']['version']}`\n"
+    stats_msg += f"📥 *Downloads:* `{FILES['datrix_app']['download_count']}`\n\n"
+    stats_msg += f"🤖 *Admin:* @{BOT_SETTINGS['admin_username']}"
     
     await update.message.reply_text(stats_msg, parse_mode='Markdown')
 
@@ -1073,21 +1075,21 @@ async def app_stats(update, context):
     load_users()
     
     if not app_users_data:
-        await update.message.reply_text("📱 **No app users registered yet.**", parse_mode='Markdown')
+        await update.message.reply_text("📱 *No app users registered yet.*", parse_mode='Markdown')
         return
     
-    stats_msg = f"🖥️ **DATRIX App Detailed Statistics**\n\n"
-    stats_msg += f"👥 **Total Users:** {len(app_users_data)}\n\n"
+    stats_msg = f"🖥️ *DATRIX App Detailed Statistics*\n\n"
+    stats_msg += f"👥 *Total Users:* `{len(app_users_data)}`\n\n"
     
     # Show recent users
-    stats_msg += "**Recent Users:**\n"
+    stats_msg += "*Recent Users:*\n"
     sorted_users = sorted(app_users_data.values(), key=lambda x: x.get('last_seen', ''), reverse=True)[:10]
     for user in sorted_users:
         name = user.get('name', 'Unknown')[:15]
         company = user.get('company', 'Unknown')[:10]
         version = user.get('app_version', 'Unknown')
         status = "✅" if user.get('license_status') == 'active' else "❌"
-        stats_msg += f"{status} {name} ({company}) - {version}\n"
+        stats_msg += f"{status} `{name}` ({company}) - {version}\n"
     
     await update.message.reply_text(stats_msg, parse_mode='Markdown')
 
@@ -1098,9 +1100,9 @@ async def update_admin(update, context):
     
     if not context.args:
         await update.message.reply_text(
-            f"📝 **Usage:** `/update_admin [username]`\n\n"
-            f"**Current:** @{BOT_SETTINGS['admin_username']}\n"
-            f"**Example:** `/update_admin Datrix_syr`",
+            f"*Usage:* `/update_admin [username]`\n\n"
+            f"*Current:* @{BOT_SETTINGS['admin_username']}\n"
+            f"*Example:* `/update_admin Datrix_syr`",
             parse_mode='Markdown'
         )
         return
@@ -1110,8 +1112,8 @@ async def update_admin(update, context):
     save_settings()
     
     await update.message.reply_text(
-        f"✅ **Admin Username Updated**\n\n"
-        f"👤 **New Admin:** @{new_username}",
+        f"✅ *Admin Username Updated*\n\n"
+        f"👤 *New Admin:* @{new_username}",
         parse_mode='Markdown'
     )
 
@@ -1123,8 +1125,8 @@ async def activate_license(update, context):
     
     if len(context.args) != 2:
         await update.message.reply_text(
-            "📝 **Usage:** `/activate [sheet_id] [yyyy-mm-dd]`\n\n"
-            "**Example:** `/activate abc123xyz 2024-12-31`",
+            "*Usage:* `/activate [sheet_id] [yyyy-mm-dd]`\n\n"
+            "*Example:* `/activate abc123xyz 2024-12-31`",
             parse_mode='Markdown'
         )
         return
@@ -1145,16 +1147,16 @@ async def activate_license(update, context):
         save_users()
         
         await update.message.reply_text(
-            f"✅ **License Activated**\n\n"
-            f"👤 **User:** {user_found.get('name', 'Unknown')}\n"
-            f"🏢 **Company:** {user_found.get('company', 'Unknown')}\n"
-            f"📊 **Sheet ID:** {sheet_id}\n"
-            f"📅 **Expires:** {expiry_date}",
+            f"✅ *License Activated*\n\n"
+            f"👤 *User:* `{user_found.get('name', 'Unknown')}`\n"
+            f"🏢 *Company:* `{user_found.get('company', 'Unknown')}`\n"
+            f"📊 *Sheet ID:* `{sheet_id}`\n"
+            f"📅 *Expires:* `{expiry_date}`",
             parse_mode='Markdown'
         )
     else:
         await update.message.reply_text(
-            f"❌ **User not found with Sheet ID:** {sheet_id}\n\n"
+            f"❌ *User not found with Sheet ID:* `{sheet_id}`\n\n"
             f"Use `/app_stats` to see registered users.",
             parse_mode='Markdown'
         )
@@ -1172,7 +1174,7 @@ async def clear_temp_files(update, context):
         
         if not files:
             await update.message.reply_text(
-                "📁 **No temporary license files found.**",
+                "📁 *No temporary license files found.*",
                 parse_mode='Markdown'
             )
             return
@@ -1187,15 +1189,15 @@ async def clear_temp_files(update, context):
                 logger.error(f"Error removing {file_path}: {e}")
         
         await update.message.reply_text(
-            f"✅ **Temporary Files Cleared**\n\n"
-            f"🗑️ **Removed:** {cleared_count} files\n"
-            f"📁 **Location:** {temp_dir}",
+            f"✅ *Temporary Files Cleared*\n\n"
+            f"🗑️ *Removed:* `{cleared_count}` files\n"
+            f"📁 *Location:* `{temp_dir}`",
             parse_mode='Markdown'
         )
         
     except Exception as e:
         await update.message.reply_text(
-            f"❌ **Error clearing files:** {str(e)}",
+            f"❌ *Error clearing files:* {str(e)}",
             parse_mode='Markdown'
         )
 
@@ -1235,7 +1237,7 @@ def main():
     print("📡 Broadcast system ready")
     print("⌨️ Inline keyboard interface active")
     print("🔌 API endpoints for desktop app active")
-    print("🔑 License request system FIXED for app integration")
+    print("🔑 License request system FIXED - No more markdown parsing errors!")
     print("📁 Enhanced license activation file system")
     print("✅ Bot is now FULLY controlled by deployed script only!")
     
