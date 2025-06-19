@@ -180,7 +180,7 @@ def create_admin_keyboard():
 # ================= TELEGRAM USER HANDLERS =================
 
 async def start(update, context):
-    """Fixed start command - only controlled by deployed bot"""
+    """Start command - main menu"""
     add_user(update.effective_user)
     user_id = str(update.effective_user.id)
     
@@ -233,7 +233,7 @@ async def callback_query_handler(update, context):
         await handle_back_to_menu(query, context)
 
 async def handle_license_callback(query, context, callback_data):
-    """🔧 FIXED: Handle license callback with proper file creation"""
+    """Handle license approval/denial"""
     try:
         logger.info(f"Processing license callback: {callback_data}")
         
@@ -486,15 +486,17 @@ async def handle_admin_help(query, context):
     help_text += "`/app_stats` - Show app user statistics\n"
     help_text += "`/activate [sheet_id] [yyyy-mm-dd]` - Activate app license\n"
     help_text += "`/clear_temp_files` - Clear temporary license files\n\n"
-    help_text += "*🔧 PROFESSIONAL LICENSE SYSTEM:*\n"
-    help_text += "• Silent API processing (no spam to admin)\n"
-    help_text += "• Desktop app waits for admin approval\n"
+    help_text += "*🔧 SILENT LICENSE SYSTEM:*\n"
+    help_text += "• All API commands processed silently\n"
+    help_text += "• Zero spam to admin chat\n"
+    help_text += "• Only license approval requests shown\n"
     help_text += "• Automatic file cleanup after retrieval\n"
     help_text += "• Real-time license activation\n\n"
     help_text += "*API Commands (processed silently):*\n"
-    help_text += "• API version checks\n"
+    help_text += "• Version checks\n"
     help_text += "• User registration\n"
-    help_text += "• License data retrieval\n\n"
+    help_text += "• License data retrieval\n"
+    help_text += "• Error reporting\n\n"
     help_text += "*Examples:*\n"
     help_text += "`/set_file 123 v2.1.7 125MB`\n"
     help_text += "`/broadcast New version available!`\n"
@@ -531,7 +533,7 @@ async def handle_admin_stats(query, context):
     stats_msg += f"📁 *File Status:* {"✅ Ready" if FILES['datrix_app']['message_id'] else "❌ Not set"}\n"
     stats_msg += f"🔢 *Current Version:* `{FILES['datrix_app']['version']}`\n"
     stats_msg += f"📥 *Total Downloads:* `{FILES['datrix_app']['download_count']}`\n"
-    stats_msg += f"🌐 *License API:* ✅ Active\n\n"
+    stats_msg += f"🌐 *Silent API System:* ✅ Active\n\n"
     stats_msg += f"📈 *Avg Messages:* `{total_messages/max(total_users, 1):.1f}` per user"
     
     keyboard = [[InlineKeyboardButton("🔙 Back to Menu", callback_data="back_to_menu")]]
@@ -563,7 +565,7 @@ async def handle_app_stats(query, context):
     stats_msg += f"✅ *Active Licenses:* `{active_licenses}`\n"
     stats_msg += f"🕐 *Recent (7d):* `{recent_app_users}`\n"
     stats_msg += f"📱 *Current App Version:* `{BOT_SETTINGS['app_version']}`\n"
-    stats_msg += f"🌐 *License API:* ✅ Enabled\n\n"
+    stats_msg += f"🌐 *Silent License API:* ✅ Enabled\n\n"
     
     if total_app_users > 0:
         stats_msg += "*Recent Users:*\n"
@@ -625,14 +627,50 @@ async def handle_back_to_menu(query, context):
         reply_markup=keyboard
     )
 
-# ================= API COMMANDS FOR DATRIX APP (SILENT PROCESSING) =================
+# ================= SILENT API HANDLERS =================
 
-async def api_check_version(update, context):
-    """🔧 FIXED: Silent API processing - no messages to admin"""
+async def silent_api_handler(update, context):
+    """🔧 Universal silent handler for all API commands"""
     try:
-        await update.message.delete()
+        message_text = update.message.text
+        chat_id = update.effective_chat.id
         
-        current_version = context.args[0] if context.args else "unknown"
+        # Immediately delete the command message
+        try:
+            await update.message.delete()
+        except:
+            pass
+        
+        # Parse command and arguments
+        parts = message_text.split()
+        command = parts[0].lower()
+        args = parts[1:] if len(parts) > 1 else []
+        
+        logger.info(f"Silent API processing: {command} with {len(args)} args")
+        
+        # Route to appropriate handler
+        if command == "/api_version":
+            await handle_api_version_silent(chat_id, args, context)
+        elif command == "/api_register":
+            await handle_api_register_silent(chat_id, message_text, context)
+        elif command == "/api_error":
+            await handle_api_error_silent(chat_id, args, context)
+        elif command == "/api_license":
+            await handle_api_license_silent(chat_id, args, context)
+        elif command == "/get_license_data":
+            await handle_get_license_data_silent(chat_id, args, context)
+        elif command == "/request_license":
+            await handle_request_license_silent(chat_id, args, context)
+        else:
+            logger.warning(f"Unknown API command: {command}")
+            
+    except Exception as e:
+        logger.error(f"Error in silent API handler: {e}")
+
+async def handle_api_version_silent(chat_id, args, context):
+    """Silent version check"""
+    try:
+        current_version = args[0] if args else "unknown"
         latest_version = FILES['datrix_app']['version']
         
         response = {
@@ -646,7 +684,7 @@ async def api_check_version(update, context):
         }
         
         await context.bot.send_message(
-            chat_id=update.effective_chat.id,
+            chat_id=chat_id,
             text=f"API_RESPONSE: {json.dumps(response)}"
         )
         
@@ -655,187 +693,22 @@ async def api_check_version(update, context):
     except Exception as e:
         error_response = {"status": "error", "message": str(e)}
         await context.bot.send_message(
-            chat_id=update.effective_chat.id,
+            chat_id=chat_id,
             text=f"API_RESPONSE: {json.dumps(error_response)}"
         )
 
-async def api_register_user(update, context):
-    """🔧 FIXED: Silent API processing for user registration"""
+async def handle_get_license_data_silent(chat_id, args, context):
+    """Silent license data retrieval"""
     try:
-        await update.message.delete()
-        
-        if len(context.args) < 1:
-            response = {"status": "error", "message": "Usage: /api_register [user_data_json]"}
-            await context.bot.send_message(
-                chat_id=update.effective_chat.id,
-                text=f"API_RESPONSE: {json.dumps(response)}"
-            )
-            return
-        
-        full_text = update.message.text
-        user_data_start = full_text.find(' ') + 1
-        user_data_str = full_text[user_data_start:].strip()
-        
-        try:
-            user_data = json.loads(user_data_str)
-        except:
-            try:
-                clean_str = user_data_str.replace("'", '"').replace('\\', '')
-                user_data = json.loads(clean_str)
-            except:
-                response = {"status": "error", "message": "Invalid user data format"}
-                await context.bot.send_message(
-                    chat_id=update.effective_chat.id,
-                    text=f"API_RESPONSE: {json.dumps(response)}"
-                )
-                return
-        
-        if 'user_id' not in user_data:
-            user_data['user_id'] = str(int(time.time()))
-        
-        user_id = add_app_user(user_data)
-        
-        if user_id:
-            response = {
-                "status": "success",
-                "user_id": user_id,
-                "message": "User registered successfully",
-                "latest_version": FILES['datrix_app']['version']
-            }
-            
-            await context.bot.send_message(
-                chat_id=update.effective_chat.id,
-                text=f"API_RESPONSE: {json.dumps(response)}"
-            )
-            
-            logger.info(f"Silent user registration: {user_data.get('name')} ({user_id})")
-        else:
-            response = {"status": "error", "message": "Failed to register user"}
-            await context.bot.send_message(
-                chat_id=update.effective_chat.id,
-                text=f"API_RESPONSE: {json.dumps(response)}"
-            )
-        
-    except Exception as e:
-        logger.error(f"Error in api_register_user: {e}")
-        error_response = {"status": "error", "message": str(e)}
-        await context.bot.send_message(
-            chat_id=update.effective_chat.id,
-            text=f"API_RESPONSE: {json.dumps(error_response)}"
-        )
-
-async def api_report_error(update, context):
-    """🔧 FIXED: Silent API processing for error reporting"""
-    try:
-        await update.message.delete()
-        
-        if not context.args:
-            response = {"status": "error", "message": "Usage: /api_error [error_details]"}
-            await context.bot.send_message(
-                chat_id=update.effective_chat.id,
-                text=f"API_RESPONSE: {json.dumps(response)}"
-            )
-            return
-        
-        error_details = ' '.join(context.args)
-        
-        # Send error report to admin silently
-        await context.bot.send_message(
-            chat_id=ADMIN_ID,
-            text=f"❌ *DATRIX App Error Report*\n\n"
-                 f"🕐 *Time:* `{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}`\n"
-                 f"📱 *Source:* Desktop Application\n"
-                 f"🔧 *Error:* `{error_details}`",
-            parse_mode='Markdown'
-        )
-        
-        response = {"status": "success", "message": "Error reported successfully"}
-        await context.bot.send_message(
-            chat_id=update.effective_chat.id,
-            text=f"API_RESPONSE: {json.dumps(response)}"
-        )
-        
-    except Exception as e:
-        error_response = {"status": "error", "message": str(e)}
-        await context.bot.send_message(
-            chat_id=update.effective_chat.id,
-            text=f"API_RESPONSE: {json.dumps(error_response)}"
-        )
-
-async def api_check_license(update, context):
-    """🔧 FIXED: Silent API processing for license checking"""
-    try:
-        await update.message.delete()
-        
-        if not context.args:
-            response = {"status": "error", "message": "Usage: /api_license [sheet_id]"}
-            await context.bot.send_message(
-                chat_id=update.effective_chat.id,
-                text=f"API_RESPONSE: {json.dumps(response)}"
-            )
-            return
-        
-        sheet_id = context.args[0]
-        load_users()
-        
-        user_found = None
-        for user_id, user_data in app_users_data.items():
-            if user_data.get('googleSheetId') == sheet_id:
-                user_found = user_data
-                break
-        
-        if user_found:
-            license_status = user_found.get('license_status', 'inactive')
-            license_expires = user_found.get('license_expires', 'N/A')
-            
-            response = {
-                "status": "success",
-                "license_status": license_status,
-                "license_expires": license_expires,
-                "user_name": user_found.get('name', 'Unknown'),
-                "company": user_found.get('company', 'Unknown'),
-                "last_updated": user_found.get('last_seen', datetime.now().isoformat())
-            }
-            
-            user_found['last_seen'] = datetime.now().isoformat()
-            save_users()
-            
-        else:
-            response = {
-                "status": "not_found",
-                "message": f"No user found with Sheet ID: {sheet_id}",
-                "license_status": "inactive",
-                "license_expires": "N/A"
-            }
-        
-        await context.bot.send_message(
-            chat_id=update.effective_chat.id,
-            text=f"API_RESPONSE: {json.dumps(response)}"
-        )
-        
-        logger.info(f"Silent license check for {sheet_id}: {response.get('license_status', 'not_found')}")
-        
-    except Exception as e:
-        error_response = {"status": "error", "message": str(e)}
-        await context.bot.send_message(
-            chat_id=update.effective_chat.id,
-            text=f"API_RESPONSE: {json.dumps(error_response)}"
-        )
-
-async def get_license_data(update, context):
-    """🔧 FIXED: Silent API processing - only respond with data, no admin notification"""
-    try:
-        await update.message.delete()
-        
-        if not context.args:
+        if not args:
             error_response = {"status": "error", "message": "Usage: /get_license_data [sheet_id]"}
             await context.bot.send_message(
-                chat_id=update.effective_chat.id,
+                chat_id=chat_id,
                 text=f"LICENSE_API_RESPONSE: {json.dumps(error_response)}"
             )
             return
         
-        sheet_id = context.args[0]
+        sheet_id = args[0]
         
         temp_dir = tempfile.gettempdir()
         license_files = [
@@ -878,7 +751,7 @@ async def get_license_data(update, context):
             }
         
         await context.bot.send_message(
-            chat_id=update.effective_chat.id,
+            chat_id=chat_id,
             text=f"LICENSE_API_RESPONSE: {json.dumps(response)}"
         )
         
@@ -887,36 +760,31 @@ async def get_license_data(update, context):
     except Exception as e:
         error_response = {"status": "error", "message": str(e)}
         await context.bot.send_message(
-            chat_id=update.effective_chat.id,
+            chat_id=chat_id,
             text=f"LICENSE_API_RESPONSE: {json.dumps(error_response)}"
         )
 
-async def request_license_activation(update, context):
-    """🔧 FIXED: Only show license request to admin, hide from chat"""
+async def handle_request_license_silent(chat_id, args, context):
+    """Silent license request processing"""
     try:
-        if len(context.args) < 1:
-            await update.message.reply_text(
-                "*Usage:* `/request_license [user_name] [company] [sheet_id] [local_temp_path]`",
-                parse_mode='Markdown'
-            )
+        if len(args) < 1:
+            logger.warning("License request with insufficient arguments")
             return
         
-        await update.message.delete()
-        
-        if len(context.args) >= 4:
-            user_name = context.args[0].replace('_', ' ')
-            company = context.args[1].replace('_', ' ')
-            sheet_id = context.args[2]
-            local_temp_path = context.args[3]
-        elif len(context.args) == 3:
-            user_name = context.args[0].replace('_', ' ')
-            company = context.args[1].replace('_', ' ')
-            sheet_id = context.args[2]
+        if len(args) >= 4:
+            user_name = args[0].replace('_', ' ')
+            company = args[1].replace('_', ' ')
+            sheet_id = args[2]
+            local_temp_path = args[3]
+        elif len(args) == 3:
+            user_name = args[0].replace('_', ' ')
+            company = args[1].replace('_', ' ')
+            sheet_id = args[2]
             local_temp_path = ""
-        elif len(context.args) == 1:
+        elif len(args) == 1:
             user_name = "Desktop User"
             company = "Unknown Company"
-            sheet_id = context.args[0]
+            sheet_id = args[0]
             local_temp_path = ""
         
         if user_name.lower() in ['n/a', 'na', 'null']:
@@ -956,6 +824,7 @@ async def request_license_activation(update, context):
             ]
         ]
         
+        # Send ONLY to admin
         await context.bot.send_message(
             chat_id=ADMIN_ID,
             text=request_message,
@@ -963,10 +832,160 @@ async def request_license_activation(update, context):
             reply_markup=InlineKeyboardMarkup(keyboard)
         )
         
-        logger.info(f"License request created: {request_id} for {sheet_id}")
+        logger.info(f"Silent license request created: {request_id} for {sheet_id}")
         
     except Exception as e:
-        logger.error(f"Error creating license request: {e}")
+        logger.error(f"Error creating silent license request: {e}")
+
+async def handle_api_register_silent(chat_id, message_text, context):
+    """Silent user registration"""
+    try:
+        user_data_start = message_text.find(' ') + 1
+        user_data_str = message_text[user_data_start:].strip()
+        
+        try:
+            user_data = json.loads(user_data_str)
+        except:
+            try:
+                clean_str = user_data_str.replace("'", '"').replace('\\', '')
+                user_data = json.loads(clean_str)
+            except:
+                response = {"status": "error", "message": "Invalid user data format"}
+                await context.bot.send_message(
+                    chat_id=chat_id,
+                    text=f"API_RESPONSE: {json.dumps(response)}"
+                )
+                return
+        
+        if 'user_id' not in user_data:
+            user_data['user_id'] = str(int(time.time()))
+        
+        user_id = add_app_user(user_data)
+        
+        if user_id:
+            response = {
+                "status": "success",
+                "user_id": user_id,
+                "message": "User registered successfully",
+                "latest_version": FILES['datrix_app']['version']
+            }
+            
+            await context.bot.send_message(
+                chat_id=chat_id,
+                text=f"API_RESPONSE: {json.dumps(response)}"
+            )
+            
+            logger.info(f"Silent user registration: {user_data.get('name')} ({user_id})")
+        else:
+            response = {"status": "error", "message": "Failed to register user"}
+            await context.bot.send_message(
+                chat_id=chat_id,
+                text=f"API_RESPONSE: {json.dumps(response)}"
+            )
+        
+    except Exception as e:
+        logger.error(f"Error in silent user registration: {e}")
+        error_response = {"status": "error", "message": str(e)}
+        await context.bot.send_message(
+            chat_id=chat_id,
+            text=f"API_RESPONSE: {json.dumps(error_response)}"
+        )
+
+async def handle_api_error_silent(chat_id, args, context):
+    """Silent error reporting"""
+    try:
+        if not args:
+            response = {"status": "error", "message": "Usage: /api_error [error_details]"}
+            await context.bot.send_message(
+                chat_id=chat_id,
+                text=f"API_RESPONSE: {json.dumps(response)}"
+            )
+            return
+        
+        error_details = ' '.join(args)
+        
+        # Send error report to admin silently
+        await context.bot.send_message(
+            chat_id=ADMIN_ID,
+            text=f"❌ *DATRIX App Error Report*\n\n"
+                 f"🕐 *Time:* `{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}`\n"
+                 f"📱 *Source:* Desktop Application\n"
+                 f"🔧 *Error:* `{error_details}`",
+            parse_mode='Markdown'
+        )
+        
+        response = {"status": "success", "message": "Error reported successfully"}
+        await context.bot.send_message(
+            chat_id=chat_id,
+            text=f"API_RESPONSE: {json.dumps(response)}"
+        )
+        
+        logger.info(f"Silent error report: {error_details[:50]}...")
+        
+    except Exception as e:
+        error_response = {"status": "error", "message": str(e)}
+        await context.bot.send_message(
+            chat_id=chat_id,
+            text=f"API_RESPONSE: {json.dumps(error_response)}"
+        )
+
+async def handle_api_license_silent(chat_id, args, context):
+    """Silent license checking"""
+    try:
+        if not args:
+            response = {"status": "error", "message": "Usage: /api_license [sheet_id]"}
+            await context.bot.send_message(
+                chat_id=chat_id,
+                text=f"API_RESPONSE: {json.dumps(response)}"
+            )
+            return
+        
+        sheet_id = args[0]
+        load_users()
+        
+        user_found = None
+        for user_id, user_data in app_users_data.items():
+            if user_data.get('googleSheetId') == sheet_id:
+                user_found = user_data
+                break
+        
+        if user_found:
+            license_status = user_found.get('license_status', 'inactive')
+            license_expires = user_found.get('license_expires', 'N/A')
+            
+            response = {
+                "status": "success",
+                "license_status": license_status,
+                "license_expires": license_expires,
+                "user_name": user_found.get('name', 'Unknown'),
+                "company": user_found.get('company', 'Unknown'),
+                "last_updated": user_found.get('last_seen', datetime.now().isoformat())
+            }
+            
+            user_found['last_seen'] = datetime.now().isoformat()
+            save_users()
+            
+        else:
+            response = {
+                "status": "not_found",
+                "message": f"No user found with Sheet ID: {sheet_id}",
+                "license_status": "inactive",
+                "license_expires": "N/A"
+            }
+        
+        await context.bot.send_message(
+            chat_id=chat_id,
+            text=f"API_RESPONSE: {json.dumps(response)}"
+        )
+        
+        logger.info(f"Silent license check for {sheet_id}: {response.get('license_status', 'not_found')}")
+        
+    except Exception as e:
+        error_response = {"status": "error", "message": str(e)}
+        await context.bot.send_message(
+            chat_id=chat_id,
+            text=f"API_RESPONSE: {json.dumps(error_response)}"
+        )
 
 # ================= ADMIN COMMANDS =================
 
@@ -1068,7 +1087,7 @@ async def stats(update, context):
     stats_msg += f"*App Users:* `{total_app_users}`\n"
     stats_msg += f"*File Status:* {"✅ Ready" if FILES['datrix_app']['message_id'] else "❌ Not set"}\n"
     stats_msg += f"*Downloads:* `{FILES['datrix_app']['download_count']}`\n"
-    stats_msg += f"*License API:* ✅ Active"
+    stats_msg += f"*Silent API System:* ✅ Active"
     
     await update.message.reply_text(stats_msg, parse_mode='Markdown')
 
@@ -1179,27 +1198,27 @@ def main():
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CallbackQueryHandler(callback_query_handler))
     
-    # 🔧 FIXED: Silent API handlers for DATRIX app
-    app.add_handler(CommandHandler("api_version", api_check_version))
-    app.add_handler(CommandHandler("api_register", api_register_user))
-    app.add_handler(CommandHandler("api_error", api_report_error))
-    app.add_handler(CommandHandler("api_license", api_check_license))
-    app.add_handler(CommandHandler("get_license_data", get_license_data))
+    # 🔧 FIXED: Universal silent API handler for all API commands
+    app.add_handler(CommandHandler("api_version", silent_api_handler))
+    app.add_handler(CommandHandler("api_register", silent_api_handler))
+    app.add_handler(CommandHandler("api_error", silent_api_handler))
+    app.add_handler(CommandHandler("api_license", silent_api_handler))
+    app.add_handler(CommandHandler("get_license_data", silent_api_handler))
+    app.add_handler(CommandHandler("request_license", silent_api_handler))
     
-    # Admin commands
+    # Admin commands (visible to admin only)
     app.add_handler(CommandHandler("set_file", set_file))
     app.add_handler(CommandHandler("broadcast", broadcast))
     app.add_handler(CommandHandler("stats", stats))
     app.add_handler(CommandHandler("app_stats", app_stats))
     app.add_handler(CommandHandler("activate", activate_license))
-    app.add_handler(CommandHandler("request_license", request_license_activation))
     app.add_handler(CommandHandler("clear_temp_files", clear_temp_files))
     
     print("🚀 DATRIX Professional Bot Starting...")
-    print("🔧 FIXED: All API functions included and working")
-    print("📡 Silent API processing - no spam to admin")
-    print("🎯 Only license requests shown to admin")
-    print("✅ Professional bot behavior implemented!")
+    print("🔧 COMPLETE: Universal silent API handler implemented")
+    print("📡 All API commands processed completely silently")
+    print("🎯 Zero spam to admin - only license requests shown")
+    print("✅ Professional silent operation with complete file!")
     
     app.run_polling(drop_pending_updates=True)
 
