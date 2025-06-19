@@ -6,6 +6,7 @@ import os
 import time
 import requests
 import tempfile
+import glob
 from datetime import datetime, timedelta
 import re
 
@@ -179,6 +180,7 @@ def create_admin_keyboard():
 # ================= TELEGRAM USER HANDLERS =================
 
 async def start(update, context):
+    """Fixed start command - only controlled by deployed bot"""
     add_user(update.effective_user)
     user_id = str(update.effective_user.id)
     
@@ -197,7 +199,7 @@ async def start(update, context):
 
 async def callback_query_handler(update, context):
     query = update.callback_query
-    await query.answer()
+    await query.answer("Processing...")  # Immediate feedback
     
     callback_data = query.data
     logger.info(f"Received callback: {callback_data}")
@@ -231,9 +233,16 @@ async def callback_query_handler(update, context):
         await handle_back_to_menu(query, context)
 
 async def handle_license_callback(query, context, callback_data):
-    """Handle license request callbacks - UPDATED FOR FILE CREATION"""
+    """Handle license request callbacks - ENHANCED WITH BETTER FEEDBACK"""
     try:
         logger.info(f"Processing license callback: {callback_data}")
+        
+        # Show immediate processing feedback
+        await query.edit_message_text(
+            f"⏳ **Processing license request...**\n\n"
+            f"Please wait while I handle your request.",
+            parse_mode='Markdown'
+        )
         
         # Parse callback data: req_{timestamp}_extend_{days} or req_{timestamp}_deny
         parts = callback_data.split('_')
@@ -245,24 +254,32 @@ async def handle_license_callback(query, context, callback_data):
         action = parts[2]
         request_id = f"req_{request_timestamp}"
         
-        # Get original message info
-        original_message_text = query.message.text
-        chat_id = query.message.chat_id
-        message_id = query.message.message_id
+        # Get original message info from pending requests
+        request_info = pending_license_requests.get(request_id)
+        if not request_info:
+            await query.edit_message_text(
+                "❌ **Error:** Request not found or already processed",
+                parse_mode='Markdown'
+            )
+            return
         
-        # Extract Google Sheet ID from original message
-        sheet_id_match = re.search(r'Sheet ID: ([a-zA-Z0-9_-]+)', original_message_text)
-        google_sheet_id = sheet_id_match.group(1) if sheet_id_match else "unknown"
+        google_sheet_id = request_info['sheet_id']
+        user_name = request_info['user_name']
+        company = request_info['company']
         
         if action == "deny":
             # Handle denial
-            new_text = original_message_text.split("\n\nPlease select an option")[0]
-            new_text += f"\n\n❌ **License request DENIED**"
-            
-            await query.edit_message_text(new_text, parse_mode='Markdown')
-            
-            confirmation = f"❌ License request denied for Google Sheet ID: {google_sheet_id}"
-            await context.bot.send_message(chat_id=chat_id, text=confirmation)
+            await query.edit_message_text(
+                f"🔑 **DATRIX LICENSE REQUEST**\n"
+                f"━━━━━━━━━━━━━━━\n"
+                f"👤 **User:** {user_name}\n"
+                f"🏢 **Company:** {company}\n"
+                f"📊 **Sheet ID:** {google_sheet_id}\n"
+                f"⏰ **Requested:** {request_info['timestamp'][:19].replace('T', ' ')}\n\n"
+                f"❌ **LICENSE REQUEST DENIED**\n"
+                f"🕐 **Processed:** {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
+                parse_mode='Markdown'
+            )
             
             logger.info(f"License request denied for {google_sheet_id}")
             
@@ -279,25 +296,12 @@ async def handle_license_callback(query, context, callback_data):
             # Calculate expiry date
             expiry_date = (datetime.now() + timedelta(days=days)).strftime('%Y-%m-%d')
             
-            # Update message
-            new_text = original_message_text.split("\n\nPlease select an option")[0]
-            new_text += f"\n\n✅ **License APPROVED for {days} days**\n📅 **Expires:** {expiry_date}"
-            
-            await query.edit_message_text(new_text, parse_mode='Markdown')
-            
-            # **NEW: Create license activation file for desktop app**
+            # **ENHANCED: Create license activation file for desktop app**
             try:
                 # Create license activation file in system temp directory
                 temp_dir = tempfile.gettempdir()
                 license_file_name = f"datrix_license_activation_{google_sheet_id}.json"
                 license_command_file = os.path.join(temp_dir, license_file_name)
-                
-                # Extract user info from original message if available
-                user_match = re.search(r'User: ([^\n]+)', original_message_text)
-                company_match = re.search(r'Company: ([^\n]+)', original_message_text)
-                
-                user_name = user_match.group(1) if user_match else "Telegram_User"
-                company_name = company_match.group(1) if company_match else "Telegram_Company"
                 
                 license_activation_data = {
                     "action": "activate_license",
@@ -308,26 +312,53 @@ async def handle_license_callback(query, context, callback_data):
                     "activation_timestamp": datetime.now().isoformat(),
                     "days_granted": days,
                     "license_email": "admin@datrix.com",
-                    "user": user_name.replace('_', ' '),
-                    "company": company_name.replace('_', ' '),
-                    "activation_method": "telegram_bot_deployed"
+                    "user": user_name,
+                    "company": company,
+                    "activation_method": "telegram_bot_deployed",
+                    "license_status": "active"
                 }
                 
                 with open(license_command_file, 'w') as f:
                     json.dump(license_activation_data, f, indent=2)
                 
                 logger.info(f"✅ License activation file created: {license_command_file}")
-                
-                # Send confirmation with file creation info
-                confirmation = f"✅ License activated for Google Sheet ID: {google_sheet_id}\n📅 Valid until: {expiry_date}\n📁 Activation file created for desktop app\n\n🔍 File: {license_file_name}"
-                await context.bot.send_message(chat_id=chat_id, text=confirmation)
+                file_created = True
                 
             except Exception as file_error:
                 logger.error(f"❌ Error creating license activation file: {file_error}")
-                
-                # Send confirmation without file creation
-                confirmation = f"✅ License activated for Google Sheet ID: {google_sheet_id}\n📅 Valid until: {expiry_date}\n⚠️ Note: Could not create activation file - manual activation may be required"
-                await context.bot.send_message(chat_id=chat_id, text=confirmation)
+                file_created = False
+            
+            # Update message with success
+            await query.edit_message_text(
+                f"🔑 **DATRIX LICENSE REQUEST**\n"
+                f"━━━━━━━━━━━━━━━\n"
+                f"👤 **User:** {user_name}\n"
+                f"🏢 **Company:** {company}\n"
+                f"📊 **Sheet ID:** {google_sheet_id}\n"
+                f"⏰ **Requested:** {request_info['timestamp'][:19].replace('T', ' ')}\n\n"
+                f"✅ **LICENSE APPROVED FOR {days} DAYS**\n"
+                f"📅 **Expires:** {expiry_date}\n"
+                f"🕐 **Processed:** {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n"
+                f"📁 **Activation File:** {'✅ Created' if file_created else '❌ Failed'}\n\n"
+                f"🎉 **License is now active for the desktop app!**",
+                parse_mode='Markdown'
+            )
+            
+            # Send additional confirmation message
+            confirmation_text = (
+                f"🎊 **License Successfully Activated!**\n\n"
+                f"📊 **Google Sheet ID:** `{google_sheet_id}`\n"
+                f"📅 **Valid Until:** {expiry_date}\n"
+                f"⏳ **Duration:** {days} days\n"
+                f"📁 **File:** {license_file_name}\n\n"
+                f"{'✅ Desktop app will automatically detect the new license!' if file_created else '⚠️ Manual activation may be required - file creation failed'}"
+            )
+            
+            await context.bot.send_message(
+                chat_id=query.message.chat_id,
+                text=confirmation_text,
+                parse_mode='Markdown'
+            )
             
             # Update app user if found
             user_updated = False
@@ -345,7 +376,7 @@ async def handle_license_callback(query, context, callback_data):
             
             logger.info(f"License extended for {google_sheet_id} until {expiry_date}")
         
-        # Clean up pending request if exists
+        # Clean up pending request
         if request_id in pending_license_requests:
             del pending_license_requests[request_id]
             save_users()
@@ -353,7 +384,7 @@ async def handle_license_callback(query, context, callback_data):
     except Exception as e:
         logger.error(f"Error processing license callback: {e}")
         await query.edit_message_text(
-            f"❌ Error processing request: {str(e)}",
+            f"❌ **Error processing request:** {str(e)}",
             parse_mode='Markdown'
         )
 
@@ -481,7 +512,7 @@ async def handle_admin_help(query, context):
     help_text += "`/app_stats` - Show app user statistics\n"
     help_text += "`/update_admin [username]` - Update admin username\n"
     help_text += "`/activate [sheet_id] [yyyy-mm-dd]` - Activate app license\n"
-    help_text += "`/request_license` - Test license request\n"
+    help_text += "`/request_license [user] [company] [sheet_id]` - Create license request\n"
     help_text += "`/clear_temp_files` - Clear temporary license files\n\n"
     help_text += "**API Commands (for DATRIX app):**\n"
     help_text += "`/api_version` - Get latest version info\n"
@@ -796,81 +827,41 @@ async def api_check_license(update, context):
         error_response = {"status": "error", "message": str(e)}
         await update.message.reply_text(f"API_RESPONSE: {json.dumps(error_response)}")
 
-async def api_activate_license(update, context):
-    """API: Activate license (for testing purposes)"""
-    try:
-        if len(context.args) < 2:
-            response = {"status": "error", "message": "Usage: /api_activate [sheet_id] [days]"}
-            await update.message.reply_text(f"API_RESPONSE: {json.dumps(response)}")
-            return
-        
-        sheet_id = context.args[0]
-        days = int(context.args[1])
-        
-        load_users()
-        
-        # Find user with this sheet ID
-        user_found = None
-        for user_id, user_data in app_users_data.items():
-            if user_data.get('googleSheetId') == sheet_id:
-                user_found = user_data
-                break
-        
-        if user_found:
-            # Calculate expiry date
-            expiry_date = (datetime.now() + timedelta(days=days)).strftime('%Y-%m-%d')
-            
-            # Update license
-            user_found['license_status'] = 'active'
-            user_found['license_expires'] = expiry_date
-            user_found['last_seen'] = datetime.now().isoformat()
-            save_users()
-            
-            response = {
-                "status": "success",
-                "message": "License activated successfully",
-                "license_status": "active",
-                "license_expires": expiry_date,
-                "activated_for_days": days
-            }
-            
-            # Notify admin
-            await context.bot.send_message(
-                chat_id=ADMIN_ID,
-                text=f"🔑 **License Activated via API**\n\n"
-                     f"👤 **User:** {user_found.get('name', 'Unknown')}\n"
-                     f"📊 **Sheet ID:** {sheet_id}\n"
-                     f"📅 **Expires:** {expiry_date}\n"
-                     f"⏰ **Duration:** {days} days",
-                parse_mode='Markdown'
-            )
-            
-        else:
-            response = {
-                "status": "not_found",
-                "message": f"No user found with Sheet ID: {sheet_id}"
-            }
-        
-        await update.message.reply_text(f"API_RESPONSE: {json.dumps(response)}")
-        
-    except Exception as e:
-        error_response = {"status": "error", "message": str(e)}
-        await update.message.reply_text(f"API_RESPONSE: {json.dumps(error_response)}")
-        
 async def request_license_activation(update, context):
-    """Send a license activation request with buttons - UPDATED FOR DESKTOP APP INTEGRATION"""
+    """FIXED: Send a license activation request with buttons - Works with app requests"""
     try:
-        if len(context.args) < 3:
+        # Handle both manual admin usage and automatic app requests
+        if len(context.args) < 1:
             await update.message.reply_text(
                 "📝 **Usage:** `/request_license [user_name] [company] [sheet_id]`\n\n"
-                "**Example:** `/request_license John_Doe ACME_Corp abc123xyz`",
+                "**Example:** `/request_license John_Doe ACME_Corp abc123xyz`\n"
+                "**Note:** Use N/A for unknown values",
                 parse_mode='Markdown'
             )
             return
         
-        user_name = context.args[0].replace('_', ' ')
-        company = context.args[1].replace('_', ' ')
-        sheet_id = context.args[2]
+        # Handle different argument counts
+        if len(context.args) >= 3:
+            user_name = context.args[0].replace('_', ' ')
+            company = context.args[1].replace('_', ' ')
+            sheet_id = context.args[2]
+        elif len(context.args) == 1:
+            # If only sheet_id provided (from app)
+            user_name = "Desktop User"
+            company = "Unknown Company"
+            sheet_id = context.args[0]
+        else:
+            await update.message.reply_text(
+                "❌ **Error:** Invalid arguments. Please provide user_name, company, and sheet_id",
+                parse_mode='Markdown'
+            )
+            return
+        
+        # Replace N/A with proper defaults
+        if user_name.lower() in ['n/a', 'na', 'null']:
+            user_name = "Desktop User"
+        if company.lower() in ['n/a', 'na', 'null']:
+            company = "Unknown Company"
         
         # Create unique request ID
         timestamp = int(datetime.now().timestamp())
@@ -909,11 +900,28 @@ Please select an option below to respond to this request."""
             ]
         ]
         
-        await update.message.reply_text(
-            request_message,
-            parse_mode='Markdown',
-            reply_markup=InlineKeyboardMarkup(keyboard)
-        )
+        # Delete the original command message for clean interface
+        try:
+            await update.message.delete()
+        except:
+            pass
+        
+        # Send to admin (if not already admin)
+        if str(update.effective_user.id) != ADMIN_ID:
+            await context.bot.send_message(
+                chat_id=ADMIN_ID,
+                text=request_message,
+                parse_mode='Markdown',
+                reply_markup=InlineKeyboardMarkup(keyboard)
+            )
+        else:
+            # Admin sent it, show in current chat
+            await context.bot.send_message(
+                chat_id=update.effective_chat.id,
+                text=request_message,
+                parse_mode='Markdown',
+                reply_markup=InlineKeyboardMarkup(keyboard)
+            )
         
         logger.info(f"License request created: {request_id} for {sheet_id}")
         
@@ -1206,7 +1214,6 @@ def main():
     app.add_handler(CommandHandler("api_register", api_register_user))
     app.add_handler(CommandHandler("api_error", api_report_error))
     app.add_handler(CommandHandler("api_license", api_check_license))
-    app.add_handler(CommandHandler("api_activate", api_activate_license))
     
     # Admin commands
     app.add_handler(CommandHandler("set_file", set_file))
@@ -1228,9 +1235,9 @@ def main():
     print("📡 Broadcast system ready")
     print("⌨️ Inline keyboard interface active")
     print("🔌 API endpoints for desktop app active")
-    print("🔑 License request system active with file-based activation")
-    print("📁 Temporary license file support enabled")
-    print("✅ Bot is ready and listening for messages!")
+    print("🔑 License request system FIXED for app integration")
+    print("📁 Enhanced license activation file system")
+    print("✅ Bot is now FULLY controlled by deployed script only!")
     
     app.run_polling(drop_pending_updates=True)
 
