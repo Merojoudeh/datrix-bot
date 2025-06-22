@@ -1,0 +1,141 @@
+<!-- templates/dashboard.html -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DATRIX - Mission Control</title>
+    <style>
+        :root {
+            --bg-primary: #0f172a; --bg-secondary: #1e293b; --bg-card: #334155;
+            --text-primary: #f8fafc; --text-secondary: #cbd5e1; --border-color: #475569;
+            --accent-primary: #3b82f6; --accent-success: #10b981; --accent-danger: #ef4444; --accent-warning: #f59e0b;
+        }
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: var(--bg-primary); color: var(--text-primary); margin: 0; }
+        .container { max-width: 1400px; margin: 0 auto; padding: 24px; }
+        .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px; }
+        .header h1 { font-size: 2rem; }
+        .controls input { padding: 10px 14px; background: var(--bg-secondary); border: 1px solid var(--border-color); border-radius: 8px; color: var(--text-primary); font-size: 1rem; margin-right: 12px; }
+        .btn { padding: 10px 20px; border: none; border-radius: 8px; font-weight: 600; cursor: pointer; background: var(--accent-primary); color: white; }
+        .table-container { background: var(--bg-secondary); border-radius: 12px; overflow: hidden; border: 1px solid var(--border-color); }
+        table { width: 100%; border-collapse: collapse; }
+        th, td { padding: 16px; text-align: left; border-bottom: 1px solid var(--border-color); }
+        th { background: var(--bg-card); font-size: 0.9rem; text-transform: uppercase; letter-spacing: 0.5px; }
+        tbody tr:hover { background-color: #334155; }
+        .status { display: inline-block; padding: 4px 10px; border-radius: 50px; font-weight: 600; font-size: 0.8rem; }
+        .status-active { background: rgba(16, 185, 129, 0.2); color: var(--accent-success); }
+        .status-expired { background: rgba(239, 68, 68, 0.2); color: var(--accent-danger); }
+        .status-inactive { background: rgba(245, 158, 11, 0.2); color: var(--accent-warning); }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🚀 DATRIX Mission Control</h1>
+            <div class="controls">
+                <input type="text" id="searchInput" placeholder="Search users...">
+                <button class="btn" onclick="fetchUsers()">🔄 Refresh</button>
+            </div>
+        </div>
+        <div class="table-container">
+            <table>
+                <thead>
+                    <tr>
+                        <th>User</th>
+                        <th>Company</th>
+                        <th>License Status</th>
+                        <th>Days Left</th>
+                        <th>Last Seen</th>
+                    </tr>
+                </thead>
+                <tbody id="userTableBody">
+                    <!-- User data will be inserted here by JavaScript -->
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <script>
+        const userTableBody = document.getElementById('userTableBody');
+        const searchInput = document.getElementById('searchInput');
+        let allUsers = [];
+
+        function renderTable(users) {
+            userTableBody.innerHTML = ''; // Clear existing table data
+            if (users.length === 0) {
+                userTableBody.innerHTML = '<tr><td colspan="5" style="text-align:center;">No user data found.</td></tr>';
+                return;
+            }
+
+            users.forEach(user => {
+                const tr = document.createElement('tr');
+                
+                // Calculate days left
+                let daysLeft = 'N/A';
+                let statusClass = 'status-inactive';
+                let statusText = user.license_status || 'Inactive';
+
+                if (user.license_status === 'active' && user.license_expires) {
+                    const expiryDate = new Date(user.license_expires);
+                    const today = new Date();
+                    const diffTime = expiryDate - today;
+                    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+                    
+                    if (diffDays > 0) {
+                        daysLeft = `${diffDays} days`;
+                        statusClass = 'status-active';
+                        statusText = 'Active';
+                    } else {
+                        daysLeft = 'Expired';
+                        statusClass = 'status-expired';
+                        statusText = 'Expired';
+                    }
+                }
+
+                // Format last seen date
+                const lastSeen = user.last_seen ? new Date(user.last_seen).toLocaleString() : 'Never';
+
+                tr.innerHTML = `
+                    <td>${user.user_name || 'N/A'}</td>
+                    <td>${user.company_name || 'N/A'}</td>
+                    <td><span class="status ${statusClass}">${statusText}</span></td>
+                    <td>${daysLeft}</td>
+                    <td>${lastSeen}</td>
+                `;
+                userTableBody.appendChild(tr);
+            });
+        }
+
+        async function fetchUsers() {
+            try {
+                const response = await fetch('/api/users');
+                if (!response.ok) {
+                    // If access is denied, redirect to login
+                    if (response.status === 403) {
+                        window.location.href = "/";
+                    }
+                    throw new Error('Failed to fetch user data');
+                }
+                const users = await response.json();
+                allUsers = users;
+                renderTable(allUsers);
+            } catch (error) {
+                console.error('Error fetching users:', error);
+                userTableBody.innerHTML = `<tr><td colspan="5" style="text-align:center; color: #ef4444;">Error loading data.</td></tr>`;
+            }
+        }
+
+        searchInput.addEventListener('input', (e) => {
+            const searchTerm = e.target.value.toLowerCase();
+            const filteredUsers = allUsers.filter(user => {
+                return (user.user_name || '').toLowerCase().includes(searchTerm) || 
+                       (user.company_name || '').toLowerCase().includes(searchTerm);
+            });
+            renderTable(filteredUsers);
+        });
+
+        // Fetch users on page load
+        document.addEventListener('DOMContentLoaded', fetchUsers);
+    </script>
+</body>
+</html>
