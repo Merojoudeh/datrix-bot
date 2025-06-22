@@ -1,22 +1,18 @@
 # main.py (Telegram Bot & Web Dashboard)
-# VERSION 4.1: Self-Contained Production Server (Waitress Integration) - COMPLETE & UNABRIDGED
+# VERSION 5.1: The Great Separation (Web/Worker Architecture) - ABSOLUTELY COMPLETE
 
-from telegram.ext import Application, CommandHandler, CallbackQueryHandler
-from telegram import InlineKeyboardButton, InlineKeyboardMarkup, constants
 import logging
 import json
 import os
-import threading
+import sys
 import asyncio
-
-# --- Web Server Integration ---
-from flask import Flask, jsonify, render_template, request, redirect, url_for, session
 from functools import wraps
-# --- Production-Grade WSGI Server ---
-from waitress import serve
 
-# --- Local Modules ---
-import database as db 
+# --- Core Application Components ---
+from telegram.ext import Application, CommandHandler, CallbackQueryHandler
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup, constants
+from flask import Flask, jsonify, render_template, request, redirect, url_for, session
+import database as db
 
 # --- Logging Configuration ---
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
@@ -28,21 +24,22 @@ ADMIN_ID = os.environ.get('ADMIN_ID')
 CHANNEL_ID = os.environ.get('CHANNEL_ID')
 ADMIN_PASSWORD = os.environ.get('ADMIN_PASSWORD')
 SECRET_KEY = os.environ.get('SECRET_KEY', os.urandom(24).hex())
-PORT = int(os.environ.get('PORT', 8080))
 
 # --- Bot Settings & File Management ---
 SETTINGS_FILE = 'settings.json'
 BOT_SETTINGS = { 'admin_username': 'Datrix_syr', 'bot_name': 'DATRIX File Server', 'welcome_message': 'Welcome!', 'app_version': 'v2.1.6' }
 FILES = { 'datrix_app': { 'message_id': None, 'version': 'v2.1.6', 'size': 'Not set', 'description': 'DATRIX App', 'download_count': 0 } }
 
-# --- Flask Web App Initialization ---
+# =================================================================================
+# === WEB HEAD: FLASK APPLICATION (For the 'web' process) =========================
+# =================================================================================
 web_app = Flask(__name__, template_folder='templates')
 web_app.secret_key = SECRET_KEY
 
-# --- Global Telegram Application Object ---
-telegram_app = None
+# This bot instance is ONLY for the web head to send one-off messages.
+# It does NOT poll and will not conflict.
+telegram_app_for_web = Application.builder().token(BOT_TOKEN).build()
 
-# --- Web Dashboard Security & API ---
 def login_required(f):
     @wraps(f)
     def decorated_function(*args, **kwargs):
@@ -75,6 +72,8 @@ def api_set_file():
     try:
         FILES['datrix_app'].update({'message_id': int(data['message_id']), 'version': data['version'], 'size': data['size']})
         BOT_SETTINGS['app_version'] = data['version']
+        # This action requires saving data, which should be handled carefully in a multi-process setup.
+        # A simple file save is generally safe but could be improved with atomic operations if needed.
         save_bot_data()
         logger.info(f"Admin updated file via dashboard: Version {data['version']}")
         return jsonify({'status': 'success', 'message': 'File information updated successfully!'}), 200
@@ -90,11 +89,14 @@ def api_broadcast():
     user_ids = db.get_all_telegram_user_ids()
     if not user_ids: return jsonify({'status': 'error', 'message': 'No users to broadcast to.'}), 404
     
-    if telegram_app and telegram_app.loop:
-        asyncio.run_coroutine_threadsafe(broadcast_message_to_users(user_ids, message), telegram_app.loop)
-        return jsonify({'status': 'success', 'message': f'Broadcast started to {len(user_ids)} users.'}), 200
-    else:
-        return jsonify({'status': 'error', 'message': 'Bot is not ready.'}), 500
+    try:
+        # The web head directly sends broadcast messages one by one.
+        asyncio.run(broadcast_message_from_web(user_ids, message))
+        logger.info(f"Admin initiated broadcast to {len(user_ids)} users via web head.")
+        return jsonify({'status': 'success', 'message': f'Broadcast started to {len(user_ids)} users.'})
+    except Exception as e:
+        logger.error(f"Web head failed to broadcast: {e}")
+        return jsonify({'status': 'error', 'message': 'Failed to send broadcast.'}), 500
 
 @web_app.route('/api/command/extend_license', methods=['POST'])
 @login_required
@@ -127,35 +129,38 @@ def api_revoke_license():
 def api_direct_message():
     data = request.json; telegram_id = data.get('telegram_id'); message = data.get('message')
     if not all([telegram_id, message]): return jsonify({'status': 'error', 'message': 'Missing Telegram ID or message text.'}), 400
-    if telegram_app and telegram_app.loop:
-        asyncio.run_coroutine_threadsafe(telegram_app.bot.send_message(chat_id=telegram_id, text=message), telegram_app.loop)
-        logger.info(f"Admin sent direct message to {telegram_id}")
+    try:
+        asyncio.run(telegram_app_for_web.bot.send_message(chat_id=telegram_id, text=message))
+        logger.info(f"Admin sent direct message to {telegram_id} via web head.")
         return jsonify({'status': 'success', 'message': 'Direct message sent successfully.'})
-    return jsonify({'status': 'error', 'message': 'Bot is not ready to send messages.'}), 500
+    except Exception as e:
+        logger.error(f"Web head failed to send message: {e}")
+        return jsonify({'status': 'error', 'message': 'Failed to send message via Telegram API.'}), 500
 
-# --- Async Helpers & Settings Persistence ---
-async def broadcast_message_to_users(user_ids, message):
+async def broadcast_message_from_web(user_ids, message):
     for user_id in user_ids:
         try:
-            await telegram_app.bot.send_message(chat_id=user_id, text=message, parse_mode=constants.ParseMode.MARKDOWN)
-            await asyncio.sleep(0.1)
-        except Exception as e: logger.warning(f"Failed broadcast to user {user_id}: {e}")
+            await telegram_app_for_web.bot.send_message(chat_id=user_id, text=message, parse_mode=constants.ParseMode.MARKDOWN)
+            await asyncio.sleep(0.1) # Rate limiting
+        except Exception as e: logger.warning(f"Failed broadcast to user {user_id} from web head: {e}")
+
+# =================================================================================
+# === WORKER HEART: TELEGRAM BOT (For the 'worker' process) =======================
+# =================================================================================
 
 def load_bot_data():
     if not os.path.exists(SETTINGS_FILE): return
     try:
-        with open(SETTINGS_FILE, 'r') as f:
-            data = json.load(f)
-            BOT_SETTINGS.update(data.get('bot_settings', {}))
-            FILES.update(data.get('files', {}))
-    except Exception as e: logger.error(f"Error loading settings: {e}")
+        with open(SETTINGS_FILE, 'r') as f: data = json.load(f)
+        BOT_SETTINGS.update(data.get('bot_settings', {}))
+        FILES.update(data.get('files', {}))
+    except Exception as e: logger.error(f"WORKER: Error loading settings: {e}")
 
 def save_bot_data():
     try:
         with open(SETTINGS_FILE, 'w') as f: json.dump({'bot_settings': BOT_SETTINGS, 'files': FILES}, f, indent=2)
-    except Exception as e: logger.error(f"Error saving settings: {e}")
+    except Exception as e: logger.error(f"WORKER: Error saving settings: {e}")
 
-# --- UI & Telegram Keyboard Creation ---
 def create_main_keyboard():
     return InlineKeyboardMarkup([[InlineKeyboardButton("📥 Download DATRIX", callback_data="download_datrix")], [InlineKeyboardButton("📋 Available Files", callback_data="list_files")], [InlineKeyboardButton("❓ Help", callback_data="help"), InlineKeyboardButton("📞 Contact Admin", callback_data="contact_admin")]])
 
@@ -166,7 +171,6 @@ def create_admin_keyboard():
     else: buttons.append([InlineKeyboardButton("📞 Contact Info", callback_data="contact_admin")])
     return InlineKeyboardMarkup(buttons)
 
-# --- Core Telegram Handlers ---
 async def start(update, context):
     db.add_or_update_telegram_user(update.effective_user)
     welcome_msg = f"🤖 *{BOT_SETTINGS['bot_name']}*\n\n👋 Hello {update.effective_user.first_name}!"
@@ -180,7 +184,7 @@ async def callback_query_handler(update, context):
     db.add_or_update_telegram_user(query.from_user)
     COMMAND_MAP = {"download_datrix": handle_download, "list_files": handle_list_files, "help": handle_help, "contact_admin": handle_contact_admin, "back_to_menu": handle_back_to_menu}
     if callback_data in COMMAND_MAP: await COMMAND_MAP[callback_data](query, context)
-    else: logger.warning(f"Unknown callback query data: {callback_data}")
+    else: logger.warning(f"WORKER: Unknown callback query data: {callback_data}")
 
 async def handle_download(query, context):
     file_info = FILES['datrix_app']
@@ -191,7 +195,7 @@ async def handle_download(query, context):
         file_info['download_count'] += 1; save_bot_data()
         await query.edit_message_text(f"✅ *Delivered:* {file_info['description']}", parse_mode='Markdown')
     except Exception as e:
-        logger.error(f"Error delivering file: {e}")
+        logger.error(f"WORKER: Error delivering file: {e}")
         await query.edit_message_text("❌ *Download Error*", parse_mode='Markdown')
 
 async def handle_list_files(query, context):
@@ -217,35 +221,28 @@ async def handle_back_to_menu(query, context):
     keyboard = create_admin_keyboard() if user_id == ADMIN_ID else create_main_keyboard()
     await query.edit_message_text(welcome_msg, parse_mode='Markdown', reply_markup=keyboard)
 
-
-# --- MAIN EXECUTION ---
-def run_web_server():
-    """Runs the Flask app using the production-grade Waitress server."""
-    try:
-        logger.info(f"🚀 Dispatching Mission Control server to port {PORT} via Waitress...")
-        serve(web_app, host='0.0.0.0', port=PORT)
-    except Exception as e: 
-        logger.error(f"Mission Control server failed: {e}", exc_info=True)
-
-def main() -> None:
-    """The main entry point for the entire application."""
-    global telegram_app
+def run_bot():
+    """This function contains the logic to run the Telegram bot worker."""
     if not all([BOT_TOKEN, ADMIN_ID, CHANNEL_ID, ADMIN_PASSWORD]):
-        logger.critical("FATAL ERROR: Missing required environment variables. Halting.")
+        logger.critical("WORKER: Missing required environment variables. Halting.")
         return
 
     load_bot_data()
     db.initialize_database()
 
-    telegram_app = Application.builder().token(BOT_TOKEN).build()
-    telegram_app.add_handler(CommandHandler("start", start))
-    telegram_app.add_handler(CallbackQueryHandler(callback_query_handler))
+    worker_app = Application.builder().token(BOT_TOKEN).build()
+    worker_app.add_handler(CommandHandler("start", start))
+    worker_app.add_handler(CallbackQueryHandler(callback_query_handler))
 
-    web_thread = threading.Thread(target=run_web_server, daemon=True)
-    web_thread.start()
+    logger.info("🚀 DATRIX Worker Heart is engaging polling sequence...")
+    worker_app.run_polling(drop_pending_updates=True)
 
-    logger.info("🚀 DATRIX Bot is engaging polling sequence...")
-    telegram_app.run_polling(drop_pending_updates=True)
-
+# =================================================================================
+# === MAIN ENTRY POINT ============================================================
+# =================================================================================
 if __name__ == '__main__':
-    main()
+    if len(sys.argv) > 1 and sys.argv[1] == '--run-bot':
+        run_bot()
+    else:
+        logger.info("Script started without '--run-bot'. Gunicorn is expected to manage this process.")
+        pass
