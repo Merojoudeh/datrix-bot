@@ -1,168 +1,139 @@
 # database.py
-import sqlite3
-import logging
-from datetime import datetime
+# VERSION 3.0: Supports the Interactive Command Layer
 
-DATABASE_FILE = 'datrix_bot.db'
+import sqlite3
+from datetime import datetime, timedelta
+import logging
+
+# --- Database Configuration ---
+DB_FILE = 'datrix_bot.db'
 logger = logging.getLogger(__name__)
 
+# --- Core Functions ---
 def get_db_connection():
     """Establishes a connection to the SQLite database."""
-    conn = sqlite3.connect(DATABASE_FILE, check_same_thread=False)
+    conn = sqlite3.connect(DB_FILE, check_same_thread=False)
     conn.row_factory = sqlite3.Row
     return conn
 
 def initialize_database():
-    """Creates the necessary tables if they don't exist."""
-    try:
-        conn = get_db_connection()
-        cursor = conn.cursor()
+    """Creates the necessary tables if they don't already exist."""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    # Main table for Telegram users interacting with the bot
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS telegram_users (
+            telegram_id INTEGER PRIMARY KEY,
+            user_name TEXT,
+            first_name TEXT,
+            last_name TEXT,
+            last_seen TEXT
+        )
+    ''')
+    # Table for app users, linked by a unique ID (e.g., from a Google Sheet)
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS app_users (
+            google_sheet_id TEXT PRIMARY KEY,
+            user_name TEXT,
+            company_name TEXT,
+            license_status TEXT DEFAULT 'inactive',
+            license_key TEXT,
+            license_expires TEXT,
+            days_granted INTEGER,
+            last_seen TEXT
+        )
+    ''')
+    conn.commit()
+    conn.close()
+    logger.info("Database initialized successfully.")
 
-        # Create App Users Table (for DATRIX desktop app users)
-        cursor.execute('''
-            CREATE TABLE IF NOT EXISTS app_users (
-                google_sheet_id TEXT PRIMARY KEY,
-                user_name TEXT,
-                company_name TEXT,
-                license_key TEXT,
-                license_status TEXT DEFAULT 'inactive',
-                license_expires TEXT,
-                days_granted INTEGER,
-                registration_date TEXT,
-                last_seen TEXT,
-                is_online BOOLEAN DEFAULT 0
-            )
-        ''')
-
-        # Create Telegram Users Table (for bot interactors)
-        cursor.execute('''
-            CREATE TABLE IF NOT EXISTS telegram_users (
-                user_id INTEGER PRIMARY KEY,
-                username TEXT,
-                first_name TEXT,
-                join_date TEXT,
-                last_active TEXT,
-                message_count INTEGER DEFAULT 0
-            )
-        ''')
-        
-        # Create Pending License Requests Table
-        cursor.execute('''
-            CREATE TABLE IF NOT EXISTS license_requests (
-                request_id TEXT PRIMARY KEY,
-                user_name TEXT,
-                company_name TEXT,
-                google_sheet_id TEXT,
-                request_timestamp TEXT
-            )
-        ''')
-
-        conn.commit()
-        conn.close()
-        logger.info("✅ Database initialized successfully.")
-    except Exception as e:
-        logger.error(f"❌ DATABASE INIT ERROR: {e}")
-
+# --- User Management ---
 def add_or_update_telegram_user(user):
-    """Adds a new Telegram user or updates their last active time."""
-    try:
-        conn = get_db_connection()
-        cursor = conn.cursor()
-        now = datetime.now().isoformat()
-        
-        cursor.execute(
-            "INSERT OR IGNORE INTO telegram_users (user_id, username, first_name, join_date, last_active, message_count) VALUES (?, ?, ?, ?, ?, 0)",
-            (user.id, user.username, user.first_name, now, now)
-        )
-        
-        cursor.execute(
-            "UPDATE telegram_users SET last_active = ?, message_count = message_count + 1 WHERE user_id = ?",
-            (now, user.id)
-        )
-        
-        conn.commit()
-        conn.close()
-    except Exception as e:
-        logger.error(f"❌ DB ERROR (add_or_update_telegram_user): {e}")
+    """Adds a new Telegram user or updates their last_seen timestamp."""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    now = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    cursor.execute('''
+        INSERT INTO telegram_users (telegram_id, user_name, first_name, last_name, last_seen)
+        VALUES (?, ?, ?, ?, ?)
+        ON CONFLICT(telegram_id) DO UPDATE SET
+        user_name=excluded.user_name,
+        first_name=excluded.first_name,
+        last_name=excluded.last_name,
+        last_seen=excluded.last_seen
+    ''', (user.id, user.username, user.first_name, user.last_name, now))
+    conn.commit()
+    conn.close()
 
-def add_license_request(request_id, user_name, company, sheet_id):
-    """Adds a new pending license request to the database."""
-    try:
-        conn = get_db_connection()
-        cursor = conn.cursor()
-        now = datetime.now().isoformat()
-        
-        cursor.execute(
-            "INSERT INTO license_requests (request_id, user_name, company_name, google_sheet_id, request_timestamp) VALUES (?, ?, ?, ?, ?)",
-            (request_id, user_name, company, sheet_id, now)
-        )
-        
-        conn.commit()
-        conn.close()
-        logger.info(f"✅ DB: License request for {sheet_id} saved.")
-        return True
-    except Exception as e:
-        logger.error(f"❌ DB ERROR (add_license_request): {e}")
-        return False
-
-def get_license_request(request_id):
-    """Retrieves a license request by its ID."""
-    try:
-        conn = get_db_connection()
-        request = conn.execute("SELECT * FROM license_requests WHERE request_id = ?", (request_id,)).fetchone()
-        conn.close()
-        return dict(request) if request else None
-    except Exception as e:
-        logger.error(f"❌ DB ERROR (get_license_request): {e}")
-        return None
-
-def delete_license_request(request_id):
-    """Deletes a license request after it has been processed."""
-    try:
-        conn = get_db_connection()
-        conn.execute("DELETE FROM license_requests WHERE request_id = ?", (request_id,))
-        conn.commit()
-        conn.close()
-        logger.info(f"✅ DB: License request {request_id} deleted.")
-    except Exception as e:
-        logger.error(f"❌ DB ERROR (delete_license_request): {e}")
-
-def activate_app_user_license(sheet_id, expiry_date, days_granted, license_key):
-    """Activates or updates the license for a desktop app user."""
-    try:
-        conn = get_db_connection()
-        cursor = conn.cursor()
-        now = datetime.now().isoformat()
-
-        # This will update the user if they exist, or do nothing if they don't.
-        # Registration should happen separately.
-        cursor.execute("""
-            UPDATE app_users 
-            SET license_status = 'active', license_expires = ?, days_granted = ?, license_key = ?, last_seen = ?
-            WHERE google_sheet_id = ?
-        """, (expiry_date, days_granted, license_key, now, sheet_id))
-
-        # Check if any row was updated
-        if cursor.rowcount == 0:
-            logger.warning(f"⚠️ DB: Tried to activate license for non-existent user with Sheet ID: {sheet_id}. No changes made.")
-        else:
-            logger.info(f"✅ DB: License for {sheet_id} activated. Expires: {expiry_date}")
-            
-        conn.commit()
-        conn.close()
-    except Exception as e:
-        logger.error(f"❌ DB ERROR (activate_app_user_license): {e}")
+def get_all_telegram_user_ids():
+    """Retrieves a list of all known Telegram user IDs."""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute('SELECT telegram_id FROM telegram_users')
+    user_ids = [row[0] for row in cursor.fetchall()]
+    conn.close()
+    return user_ids
 
 def get_all_app_users():
-    """Retrieves all registered desktop application users."""
-    try:
-        conn = get_db_connection()
-        users = conn.execute("SELECT * FROM app_users ORDER BY last_seen DESC").fetchall()
-        conn.close()
-        return [dict(user) for user in users]
-    except Exception as e:
-        logger.error(f"❌ DB ERROR (get_all_app_users): {e}")
-        return []
+    """Retrieves all users from the app_users table for the dashboard."""
+    conn = get_db_connection()
+    users = conn.execute('SELECT * FROM app_users').fetchall()
+    conn.close()
+    # Convert sqlite3.Row objects to standard dictionaries for JSON serialization
+    return [dict(user) for user in users]
 
-# Initialize the database when the module is loaded
-initialize_database()
+# --- NEW: Interactive Command Functions ---
+
+def extend_user_license(google_sheet_id: str, days_to_add: int) -> str:
+    """Extends a user's license by a number of days from today."""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    
+    # Calculate the new expiry date from today
+    new_expiry_date_obj = datetime.now() + timedelta(days=int(days_to_add))
+    new_expiry_date_str = new_expiry_date_obj.strftime('%Y-%m-%d %H:%M:%S')
+    
+    cursor.execute('''
+        UPDATE app_users
+        SET license_expires = ?, license_status = 'active'
+        WHERE google_sheet_id = ?
+    ''', (new_expiry_date_str, google_sheet_id))
+    
+    conn.commit()
+    conn.close()
+    logger.info(f"Extended license for {google_sheet_id} to {new_expiry_date_str}")
+    return new_expiry_date_str
+
+def revoke_user_license(google_sheet_id: str):
+    """Revokes a user's license by setting its status to 'expired'."""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    
+    # Set expiry to a past date to ensure it's invalid
+    past_date = (datetime.now() - timedelta(days=1)).strftime('%Y-%m-%d %H:%M:%S')
+    
+    cursor.execute('''
+        UPDATE app_users
+        SET license_status = 'revoked', license_expires = ?
+        WHERE google_sheet_id = ?
+    ''', (past_date, google_sheet_id))
+    
+    conn.commit()
+    conn.close()
+    logger.info(f"Revoked license for {google_sheet_id}")
+
+# --- Dummy/Example Functions (for testing if needed) ---
+def add_dummy_app_user(google_sheet_id, user_name, company_name):
+    """Adds a sample app user for testing the dashboard."""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute('''
+            INSERT INTO app_users (google_sheet_id, user_name, company_name, license_status, last_seen)
+            VALUES (?, ?, ?, 'active', ?)
+        ''', (google_sheet_id, user_name, company_name, datetime.now().strftime('%Y-%m-%d %H:%M:%S')))
+        conn.commit()
+    except sqlite3.IntegrityError:
+        logger.warning(f"Dummy user {google_sheet_id} already exists.")
+    finally:
+        conn.close()
