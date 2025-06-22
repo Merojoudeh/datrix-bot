@@ -1,4 +1,5 @@
 <!-- templates/dashboard.html -->
+<!-- Final Version: Includes User Table and Bot Control Panel -->
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -13,11 +14,11 @@
         }
         body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: var(--bg-primary); color: var(--text-primary); margin: 0; }
         .container { max-width: 1400px; margin: 0 auto; padding: 24px; }
-        .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px; }
-        .header h1 { font-size: 2rem; }
-        .controls input { padding: 10px 14px; background: var(--bg-secondary); border: 1px solid var(--border-color); border-radius: 8px; color: var(--text-primary); font-size: 1rem; margin-right: 12px; }
+        .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px; flex-wrap: wrap; gap: 1rem; }
+        .header h1 { font-size: 2rem; margin: 0; }
+        .controls input { padding: 10px 14px; background: var(--bg-secondary); border: 1px solid var(--border-color); border-radius: 8px; color: var(--text-primary); font-size: 1rem; }
         .btn { padding: 10px 20px; border: none; border-radius: 8px; font-weight: 600; cursor: pointer; background: var(--accent-primary); color: white; }
-        .table-container { background: var(--bg-secondary); border-radius: 12px; overflow: hidden; border: 1px solid var(--border-color); }
+        .table-container { background: var(--bg-secondary); border-radius: 12px; overflow: hidden; border: 1px solid var(--border-color); margin-bottom: 32px; }
         table { width: 100%; border-collapse: collapse; }
         th, td { padding: 16px; text-align: left; border-bottom: 1px solid var(--border-color); }
         th { background: var(--bg-card); font-size: 0.9rem; text-transform: uppercase; letter-spacing: 0.5px; }
@@ -26,6 +27,19 @@
         .status-active { background: rgba(16, 185, 129, 0.2); color: var(--accent-success); }
         .status-expired { background: rgba(239, 68, 68, 0.2); color: var(--accent-danger); }
         .status-inactive { background: rgba(245, 158, 11, 0.2); color: var(--accent-warning); }
+        
+        /* New Control Panel Styles */
+        .control-panel { background: var(--bg-secondary); border-radius: 12px; padding: 24px; border: 1px solid var(--border-color); }
+        .control-panel h2 { margin-top: 0; }
+        .form-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 24px; }
+        .form-section { background: var(--bg-card); padding: 20px; border-radius: 8px; }
+        .form-section h3 { margin-top: 0; border-bottom: 1px solid var(--border-color); padding-bottom: 10px; margin-bottom: 15px; }
+        .form-group { margin-bottom: 15px; }
+        .form-group label { display: block; margin-bottom: 8px; font-weight: 600; }
+        .form-group input, .form-group textarea { width: 100%; box-sizing: border-box; padding: 10px; background: var(--bg-secondary); border: 1px solid var(--border-color); border-radius: 6px; color: var(--text-primary); }
+        .feedback { margin-top: 15px; padding: 10px; border-radius: 6px; display: none; }
+        .feedback.success { background: var(--accent-success); color: white; }
+        .feedback.error { background: var(--accent-danger); color: white; }
     </style>
 </head>
 <body>
@@ -34,9 +48,10 @@
             <h1>🚀 DATRIX Mission Control</h1>
             <div class="controls">
                 <input type="text" id="searchInput" placeholder="Search users...">
-                <button class="btn" onclick="fetchUsers()">🔄 Refresh</button>
+                <button class="btn" onclick="fetchUsers()">🔄 Refresh Users</button>
             </div>
         </div>
+
         <div class="table-container">
             <table>
                 <thead>
@@ -53,6 +68,43 @@
                 </tbody>
             </table>
         </div>
+
+        <!-- BOT CONTROL PANEL -->
+        <div class="control-panel">
+            <h2>⚙️ Bot Control Panel</h2>
+            <div class="form-grid">
+                <div class="form-section">
+                    <h3>📁 Set Application File</h3>
+                    <form id="setFileForm">
+                        <div class="form-group">
+                            <label for="messageId">File Message ID</label>
+                            <input type="text" id="messageId" name="messageId" required>
+                        </div>
+                        <div class="form-group">
+                            <label for="version">Version (e.g., v2.1.7)</label>
+                            <input type="text" id="version" name="version" required>
+                        </div>
+                        <div class="form-group">
+                            <label for="size">Size (e.g., 25.4 MB)</label>
+                            <input type="text" id="size" name="size" required>
+                        </div>
+                        <button type="submit" class="btn">Update File</button>
+                        <div class="feedback" id="setFileFeedback"></div>
+                    </form>
+                </div>
+                <div class="form-section">
+                    <h3>📢 Broadcast Message</h3>
+                    <form id="broadcastForm">
+                        <div class="form-group">
+                            <label for="broadcastMessage">Message (Markdown is supported)</label>
+                            <textarea id="broadcastMessage" name="broadcastMessage" rows="4" required></textarea>
+                        </div>
+                        <button type="submit" class="btn">Send to All Users</button>
+                        <div class="feedback" id="broadcastFeedback"></div>
+                    </form>
+                </div>
+            </div>
+        </div>
     </div>
 
     <script>
@@ -61,47 +113,20 @@
         let allUsers = [];
 
         function renderTable(users) {
-            userTableBody.innerHTML = ''; // Clear existing table data
+            userTableBody.innerHTML = '';
             if (users.length === 0) {
                 userTableBody.innerHTML = '<tr><td colspan="5" style="text-align:center;">No user data found.</td></tr>';
                 return;
             }
-
             users.forEach(user => {
                 const tr = document.createElement('tr');
-                
-                // Calculate days left
-                let daysLeft = 'N/A';
-                let statusClass = 'status-inactive';
-                let statusText = user.license_status || 'Inactive';
-
+                let daysLeft = 'N/A', statusClass = 'status-inactive', statusText = user.license_status || 'Inactive';
                 if (user.license_status === 'active' && user.license_expires) {
-                    const expiryDate = new Date(user.license_expires);
-                    const today = new Date();
-                    const diffTime = expiryDate - today;
-                    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-                    
-                    if (diffDays > 0) {
-                        daysLeft = `${diffDays} days`;
-                        statusClass = 'status-active';
-                        statusText = 'Active';
-                    } else {
-                        daysLeft = 'Expired';
-                        statusClass = 'status-expired';
-                        statusText = 'Expired';
-                    }
+                    const diffDays = Math.ceil((new Date(user.license_expires) - new Date()) / (1000 * 60 * 60 * 24));
+                    if (diffDays > 0) { daysLeft = `${diffDays} days`; statusClass = 'status-active'; statusText = 'Active'; } 
+                    else { daysLeft = 'Expired'; statusClass = 'status-expired'; statusText = 'Expired'; }
                 }
-
-                // Format last seen date
-                const lastSeen = user.last_seen ? new Date(user.last_seen).toLocaleString() : 'Never';
-
-                tr.innerHTML = `
-                    <td>${user.user_name || 'N/A'}</td>
-                    <td>${user.company_name || 'N/A'}</td>
-                    <td><span class="status ${statusClass}">${statusText}</span></td>
-                    <td>${daysLeft}</td>
-                    <td>${lastSeen}</td>
-                `;
+                tr.innerHTML = `<td>${user.user_name || 'N/A'}</td><td>${user.company_name || 'N/A'}</td><td><span class="status ${statusClass}">${statusText}</span></td><td>${daysLeft}</td><td>${user.last_seen ? new Date(user.last_seen).toLocaleString() : 'Never'}</td>`;
                 userTableBody.appendChild(tr);
             });
         }
@@ -109,32 +134,52 @@
         async function fetchUsers() {
             try {
                 const response = await fetch('/api/users');
-                if (!response.ok) {
-                    // If access is denied, redirect to login
-                    if (response.status === 403) {
-                        window.location.href = "/";
-                    }
-                    throw new Error('Failed to fetch user data');
-                }
-                const users = await response.json();
-                allUsers = users;
+                if (!response.ok) { if (response.status === 403) window.location.href = "/"; throw new Error('Auth Error'); }
+                allUsers = await response.json();
                 renderTable(allUsers);
-            } catch (error) {
-                console.error('Error fetching users:', error);
-                userTableBody.innerHTML = `<tr><td colspan="5" style="text-align:center; color: #ef4444;">Error loading data.</td></tr>`;
-            }
+            } catch (error) { console.error('Error fetching users:', error); userTableBody.innerHTML = `<tr><td colspan="5" style="text-align:center; color: #ef4444;">Error loading data.</td></tr>`; }
         }
 
         searchInput.addEventListener('input', (e) => {
             const searchTerm = e.target.value.toLowerCase();
-            const filteredUsers = allUsers.filter(user => {
-                return (user.user_name || '').toLowerCase().includes(searchTerm) || 
-                       (user.company_name || '').toLowerCase().includes(searchTerm);
-            });
+            const filteredUsers = allUsers.filter(u => (u.user_name || '').toLowerCase().includes(searchTerm) || (u.company_name || '').toLowerCase().includes(searchTerm));
             renderTable(filteredUsers);
         });
 
-        // Fetch users on page load
+        // --- New Control Panel Logic ---
+        const setFileForm = document.getElementById('setFileForm');
+        const setFileFeedback = document.getElementById('setFileFeedback');
+        setFileForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const formData = new FormData(setFileForm);
+            const data = { message_id: formData.get('messageId'), version: formData.get('version'), size: formData.get('size') };
+            
+            showFeedback(setFileFeedback, 'Updating...', 'loading');
+            const response = await fetch('/api/set_file', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(data) });
+            const result = await response.json();
+            if (response.ok) showFeedback(setFileFeedback, result.message, 'success');
+            else showFeedback(setFileFeedback, result.message, 'error');
+        });
+
+        const broadcastForm = document.getElementById('broadcastForm');
+        const broadcastFeedback = document.getElementById('broadcastFeedback');
+        broadcastForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const data = { message: new FormData(broadcastForm).get('broadcastMessage') };
+
+            showFeedback(broadcastFeedback, 'Sending broadcast...', 'loading');
+            const response = await fetch('/api/broadcast', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(data) });
+            const result = await response.json();
+            if (response.ok) showFeedback(broadcastFeedback, result.message, 'success');
+            else showFeedback(broadcastFeedback, result.message, 'error');
+        });
+
+        function showFeedback(element, message, type) {
+            element.textContent = message;
+            element.className = `feedback ${type}`;
+            element.style.display = 'block';
+        }
+
         document.addEventListener('DOMContentLoaded', fetchUsers);
     </script>
 </body>
