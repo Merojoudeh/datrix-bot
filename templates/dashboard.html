@@ -1,5 +1,5 @@
 <!-- templates/dashboard.html -->
-<!-- VERSION 4.0: Genesis Button -->
+<!-- VERSION 4.1: Genesis Button & Complete Modal Logic -->
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -19,7 +19,7 @@
         .controls { display: flex; align-items: center; gap: 1rem; }
         .controls input { padding: 10px 14px; background: var(--bg-secondary); border: 1px solid var(--border-color); border-radius: 8px; color: var(--text-primary); font-size: 1rem; }
         .btn { padding: 10px 20px; border: none; border-radius: 8px; font-weight: 600; cursor: pointer; transition: all 0.2s ease; display: inline-flex; align-items: center; gap: 8px; }
-        .btn:disabled { background: var(--bg-card); cursor: not-allowed; }
+        .btn:disabled { background: var(--bg-card); cursor: not-allowed; color: var(--text-secondary); }
         .btn-primary { background: var(--accent-primary); color: white; }
         .btn-primary:hover:not(:disabled) { background: #2563eb; }
         .btn-success { background: var(--accent-success); color: white; }
@@ -37,11 +37,21 @@
         .status-expired { background: rgba(239, 68, 68, 0.2); color: var(--accent-danger); }
         .status-revoked { background: rgba(107, 114, 128, 0.2); color: #9ca3af; }
         .status-inactive { background: rgba(245, 158, 11, 0.2); color: var(--accent-warning); }
-        .modal-backdrop { /* ... existing styles ... */ }
-        .modal-content { /* ... existing styles ... */ }
-        .feedback { margin-top: 15px; padding: 12px; border-radius: 8px; display: none; text-align: center; }
-        .feedback.success { background: var(--accent-success); color: white; }
-        .feedback.error { background: var(--accent-danger); color: white; }
+        .modal-backdrop { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.6); z-index: 100; display: none; align-items: center; justify-content: center; }
+        .modal-content { background: var(--bg-modal); padding: 2rem; border-radius: 12px; width: 90%; max-width: 600px; border: 1px solid var(--border-color); position: relative; }
+        .modal-close { position: absolute; top: 1rem; right: 1rem; background: none; border: none; font-size: 1.5rem; color: var(--text-secondary); cursor: pointer; }
+        .modal-header { margin-bottom: 1.5rem; }
+        .modal-header h2 { margin: 0; }
+        .modal-body .form-section { margin-bottom: 1.5rem; }
+        .modal-body h3 { margin-top: 0; border-bottom: 1px solid var(--border-color); padding-bottom: 10px; margin-bottom: 15px; }
+        .action-buttons { display: flex; gap: 10px; flex-wrap: wrap; }
+        .form-group { margin-bottom: 15px; }
+        .form-group label { display: block; margin-bottom: 8px; font-weight: 600; }
+        .form-group textarea { width: 100%; box-sizing: border-box; padding: 10px; background: var(--bg-secondary); border: 1px solid var(--border-color); border-radius: 6px; color: var(--text-primary); }
+        .feedback { margin-top: 15px; padding: 12px; border-radius: 8px; display: none; text-align: center; font-weight: 600; }
+        .feedback.success { background: rgba(16, 185, 129, 0.2); color: var(--accent-success); }
+        .feedback.error { background: rgba(239, 68, 68, 0.2); color: var(--accent-danger); }
+        .feedback.loading { background: rgba(59, 130, 246, 0.2); color: var(--accent-primary); }
         .toast { position: fixed; top: 20px; right: 20px; padding: 15px 25px; border-radius: 8px; color: white; z-index: 1000; display: none; opacity: 0; transition: opacity 0.5s, transform 0.5s; transform: translateY(-30px); }
         .toast.show { display: block; opacity: 1; transform: translateY(0); }
         .toast.success { background-color: var(--accent-success); }
@@ -67,8 +77,34 @@
             </table>
         </div>
     </div>
-    <div id="userModal" class="modal-backdrop" style="display: none; align-items: center; justify-content: center;">
-        <!-- Modal content is unchanged -->
+    <div id="userModal" class="modal-backdrop">
+        <div class="modal-content">
+            <button class="modal-close" onclick="closeModal()">&times;</button>
+            <div class="modal-header">
+                <h2 id="modalUserName">User Details</h2>
+                <p id="modalSheetId" style="color: var(--text-secondary); font-size: 0.9rem;"></p>
+            </div>
+            <div class="modal-body">
+                <div class="form-section">
+                    <h3>🔑 License Control</h3>
+                    <div class="action-buttons">
+                        <button class="btn btn-primary" onclick="extendLicense(30)">+30 Days</button>
+                        <button class="btn btn-primary" onclick="extendLicense(90)">+90 Days</button>
+                        <button class="btn btn-primary" onclick="extendLicense(365)">+365 Days</button>
+                        <button class="btn btn-danger" onclick="revokeLicense()">Revoke License</button>
+                    </div>
+                </div>
+                <div class="form-section">
+                    <h3>✉️ Direct Message</h3>
+                    <div class="form-group">
+                        <label for="directMessage">Send a message to this user:</label>
+                        <textarea id="directMessage" rows="3"></textarea>
+                    </div>
+                    <button class="btn btn-primary" onclick="sendDirectMessage()">Send Message</button>
+                </div>
+                <div id="modalFeedback" class="feedback"></div>
+            </div>
+        </div>
     </div>
     <div id="toast" class="toast"></div>
 
@@ -76,7 +112,14 @@
         const userTableBody = document.getElementById('userTableBody');
         const searchInput = document.getElementById('searchInput');
         const seedButton = document.getElementById('seedButton');
+        const userModal = document.getElementById('userModal');
+        const modalUserName = document.getElementById('modalUserName');
+        const modalSheetId = document.getElementById('modalSheetId');
+        const modalFeedback = document.getElementById('modalFeedback');
+        const directMessageInput = document.getElementById('directMessage');
+
         let allUsers = [];
+        let selectedUser = null;
 
         function renderTable(users) {
             userTableBody.innerHTML = '';
@@ -86,7 +129,7 @@
             }
             users.forEach(user => {
                 const tr = document.createElement('tr');
-                tr.onclick = () => openModal(user); // Assumes openModal function exists
+                tr.onclick = () => openModal(user);
                 let daysLeft = 'N/A', statusClass = 'status-inactive', statusText = user.license_status || 'Inactive';
                 if (user.license_expires) {
                     const expiry = new Date(user.license_expires);
@@ -124,7 +167,7 @@
                 const result = await response.json();
                 if (!response.ok) throw new Error(result.message || 'Failed to seed database.');
                 showToast(result.message, 'success');
-                await fetchUsers(); // Refresh the table to show the new user
+                await fetchUsers();
             } catch (error) {
                 showToast(error.message, 'error');
             } finally {
@@ -139,9 +182,72 @@
             toast.className = `toast ${type} show`;
             setTimeout(() => { toast.className = toast.className.replace('show', ''); }, 3000);
         }
-        
-        // All modal logic (openModal, closeModal, API commands) is assumed to be present and correct.
-        // It is omitted here for clarity but should be included from your previous complete version.
+
+        function openModal(user) {
+            selectedUser = user;
+            modalUserName.textContent = user.user_name || 'Unnamed User';
+            modalSheetId.textContent = `Sheet ID: ${user.google_sheet_id}`;
+            directMessageInput.value = '';
+            modalFeedback.style.display = 'none';
+            userModal.style.display = 'flex';
+        }
+
+        function closeModal() {
+            userModal.style.display = 'none';
+            selectedUser = null;
+        }
+
+        async function sendApiCommand(endpoint, body) {
+            showFeedback('Processing...', 'loading');
+            try {
+                const response = await fetch(endpoint, {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify(body)
+                });
+                const result = await response.json();
+                if (!response.ok) throw new Error(result.message || 'API request failed');
+                showFeedback(result.message, 'success');
+                fetchUsers();
+            } catch (error) {
+                showFeedback(error.message, 'error');
+            }
+        }
+
+        function extendLicense(days) {
+            sendApiCommand('/api/command/extend_license', {
+                google_sheet_id: selectedUser.google_sheet_id,
+                days: days
+            });
+        }
+
+        function revokeLicense() {
+            if (confirm(`Are you sure you want to revoke the license for ${selectedUser.user_name}? This action cannot be undone.`)) {
+                sendApiCommand('/api/command/revoke_license', {
+                    google_sheet_id: selectedUser.google_sheet_id
+                });
+            }
+        }
+
+        function sendDirectMessage() {
+            const message = directMessageInput.value;
+            if (!message) { showFeedback('Message cannot be empty.', 'error'); return; }
+            if (!selectedUser.telegram_id) { showFeedback('This user does not have a linked Telegram ID.', 'error'); return; }
+            sendApiCommand('/api/command/direct_message', {
+                telegram_id: selectedUser.telegram_id,
+                message: message
+            });
+        }
+
+        function showFeedback(message, type) {
+            modalFeedback.textContent = message;
+            modalFeedback.className = `feedback ${type}`;
+            modalFeedback.style.display = 'block';
+        }
+
+        window.onclick = function(event) {
+            if (event.target == userModal) { closeModal(); }
+        }
 
         searchInput.addEventListener('input', (e) => {
             const searchTerm = e.target.value.toLowerCase();
