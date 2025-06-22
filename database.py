@@ -1,5 +1,5 @@
 # database.py
-# VERSION 3.1: Supports User Seeding
+# VERSION 3.2: Supports Operative Status Checks
 
 import sqlite3
 from datetime import datetime, timedelta
@@ -35,7 +35,7 @@ def initialize_database():
             license_expires TEXT,
             days_granted INTEGER,
             last_seen TEXT,
-            telegram_id INTEGER,
+            telegram_id INTEGER UNIQUE,
             FOREIGN KEY (telegram_id) REFERENCES telegram_users(telegram_id)
         )
     ''')
@@ -52,6 +52,15 @@ def add_or_update_telegram_user(user):
     ''', (user.id, user.username, user.first_name, user.last_name, now))
     conn.commit(); conn.close()
 
+# --- NEW: Operative Status Check ---
+def is_app_user(telegram_id: int) -> bool:
+    """Checks if a Telegram user is an authorized app user."""
+    conn = get_db_connection(); cursor = conn.cursor()
+    cursor.execute("SELECT 1 FROM app_users WHERE telegram_id = ?", (telegram_id,))
+    result = cursor.fetchone()
+    conn.close()
+    return result is not None
+
 def get_all_telegram_user_ids():
     conn = get_db_connection(); cursor = conn.cursor()
     cursor.execute('SELECT telegram_id FROM telegram_users')
@@ -64,39 +73,42 @@ def get_all_app_users():
     return [dict(user) for user in users]
 
 def extend_user_license(google_sheet_id: str, days_to_add: int) -> str:
+    # ... (function is unchanged) ...
     conn = get_db_connection(); cursor = conn.cursor()
     new_expiry_date_obj = datetime.now() + timedelta(days=int(days_to_add))
     new_expiry_date_str = new_expiry_date_obj.strftime('%Y-%m-%d %H:%M:%S')
-    cursor.execute('''
-        UPDATE app_users SET license_expires = ?, license_status = 'active' WHERE google_sheet_id = ?
-    ''', (new_expiry_date_str, google_sheet_id))
+    cursor.execute("UPDATE app_users SET license_expires = ?, license_status = 'active' WHERE google_sheet_id = ?", (new_expiry_date_str, google_sheet_id))
     conn.commit(); conn.close()
     return new_expiry_date_str
 
 def revoke_user_license(google_sheet_id: str):
+    # ... (function is unchanged) ...
     conn = get_db_connection(); cursor = conn.cursor()
     past_date = (datetime.now() - timedelta(days=1)).strftime('%Y-%m-%d %H:%M:%S')
-    cursor.execute('''
-        UPDATE app_users SET license_status = 'revoked', license_expires = ? WHERE google_sheet_id = ?
-    ''', (past_date, google_sheet_id))
+    cursor.execute("UPDATE app_users SET license_status = 'revoked', license_expires = ? WHERE google_sheet_id = ?", (past_date, google_sheet_id))
     conn.commit(); conn.close()
 
-# --- NEW: User Seeding Function ---
-def create_seed_user(google_sheet_id, user_name, company_name, telegram_id, license_days=30):
-    """Creates a new user in the app_users table."""
+def create_app_user(telegram_user, license_days=30):
+    """Creates a new app user from a telegram user object."""
     conn = get_db_connection(); cursor = conn.cursor()
     expires_date = (datetime.now() + timedelta(days=license_days)).strftime('%Y-%m-%d %H:%M:%S')
     now = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    # Generate a unique Google Sheet ID for simplicity
+    google_sheet_id = f"GS-{telegram_user.id}"
+    user_name = telegram_user.first_name
+    if telegram_user.last_name:
+        user_name += f" {telegram_user.last_name}"
+    
     try:
         cursor.execute('''
             INSERT INTO app_users (google_sheet_id, user_name, company_name, license_status, license_expires, days_granted, last_seen, telegram_id)
             VALUES (?, ?, ?, 'active', ?, ?, ?, ?)
-        ''', (google_sheet_id, user_name, company_name, expires_date, license_days, now, telegram_id))
+        ''', (google_sheet_id, user_name, "New Recruit", expires_date, license_days, now, telegram_user.id))
         conn.commit()
-        logger.info(f"Successfully seeded user: {user_name}")
+        logger.info(f"Successfully created app user: {user_name} ({telegram_user.id})")
         return True
     except sqlite3.IntegrityError:
-        logger.warning(f"Seed user with ID {google_sheet_id} or Telegram ID {telegram_id} already exists.")
+        logger.warning(f"App user with Telegram ID {telegram_user.id} already exists.")
         return False
     finally:
         conn.close()
