@@ -140,14 +140,17 @@ def create_admin_keyboard():
 
 def run_bot():
     try:
-        if not all([BOT_TOKEN, ADMIN_ID]): logger.critical("WORKER: Critical configuration missing. Halting."); return
+        if not all([BOT_TOKEN, ADMIN_ID]):
+            logger.critical("WORKER: Critical configuration missing. Halting.")
+            return
         db.initialize_database()
         worker_app = ApplicationBuilder().token(BOT_TOKEN).build()
         worker_app.add_handler(CommandHandler("start", start))
         worker_app.add_handler(CallbackQueryHandler(callback_query_handler))
-        logger.info("PENANCE PROTOCOL: Worker online. All systems nominal."); worker_app.run_polling()
-    # --- [FIXED] The SyntaxError has been corrected. ---
-    except Exception as e: logger.critical(f"WORKER: CATASTROPHIC FAILURE: {e}", exc_info=True)
+        logger.info("SYSTEM ONLINE: Worker engaging polling sequence.")
+    except Exception as e:
+        logger.critical(f"WORKER: CATASTROPHIC FAILURE: {e}", exc_info=True)
 
 if __name__ == '__main__':
-    if len(sys.argv) > 1 and sys.argv[1] == '--run-bot': run_bot()
+    if len(sys.argv) > 1 and sys.argv[1] == '--run-bot':
+        run_bot()
