@@ -1,10 +1,13 @@
 # main.py
-# VERSION 9.0: Doppelgänger Protocol - FINAL & STABLE
+# VERSION 10.0: Keystone Protocol - FINAL, INTEGRITY-CHECKED
 
 import logging, json, os, sys, asyncio, re
 from functools import wraps
-# --- [SURGICAL CHANGE] ---
-# We now import the lightweight 'Bot' class for the web head.
+
+# --- [KEYSTONE RESTORED] ---
+# The critical Flask import lifeline has been restored. This resolves the NameError.
+from flask import Flask, jsonify, render_template, request, redirect, url_for, session
+
 from telegram import Bot, InlineKeyboardButton, InlineKeyboardMarkup, constants, User as TelegramUser
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, ApplicationBuilder
 from telegram.error import InvalidToken, BadRequest
@@ -23,17 +26,13 @@ BOT_SETTINGS = { 'admin_username': 'Datrix_syr', 'bot_name': 'DATRIX File Server
 FILES = { 'datrix_app': { 'message_id': None, 'version': 'v2.1.6', 'size': 'Not set' } }
 
 # =================================================================================
-# === WEB HEAD: FLASK APPLICATION (Anomaly Purged) ================================
+# === WEB HEAD: FLASK APPLICATION (Foundation Restored) ===========================
 # =================================================================================
 web_app = Flask(__name__, template_folder='templates'); web_app.secret_key = SECRET_KEY
 db.initialize_database(); logger.info("WEB HEAD: Database foundation verified.")
 
-# --- [SURGICAL CHANGE] ---
-# Replaced the heavy 'Application' object with a lightweight 'Bot' object.
-# This eliminates the "Conflict" error while retaining broadcast functionality.
 try:
-    if BOT_TOKEN:
-        web_bot_instance = Bot(token=BOT_TOKEN)
+    if BOT_TOKEN: web_bot_instance = Bot(token=BOT_TOKEN)
     else:
         web_bot_instance = None
         logger.error("WEB HEAD: Invalid or missing BOT_TOKEN. Web-based messaging will be disabled.")
@@ -83,8 +82,6 @@ def api_set_file():
 @web_app.route('/api/broadcast', methods=['POST'])
 @login_required
 def api_broadcast():
-    # --- [SURGICAL CHANGE] ---
-    # Now checks for the new lightweight bot instance.
     if not web_bot_instance: return jsonify({'status': 'error', 'message': 'Messaging disabled due to token error.'}), 503
     message = request.json.get('message'); user_ids = [u['telegram_id'] for u in db.get_all_telegram_users()]
     if not message or not user_ids: return jsonify({'status': 'error', 'message': 'Missing message or no users found.'}), 400
@@ -94,14 +91,12 @@ def api_broadcast():
     except Exception as e: return jsonify({'status': 'error', 'message': str(e)}), 500
 
 async def broadcast_message_from_web(user_ids, message):
-    # --- [SURGICAL CHANGE] ---
-    # Now uses the lightweight bot instance directly.
     for user_id in user_ids:
         try: await web_bot_instance.send_message(chat_id=user_id, text=message); await asyncio.sleep(0.1)
         except Exception as e: logger.warning(f"Broadcast failed for user {user_id}: {e}")
 
 # =================================================================================
-# === WORKER HEART: TELEGRAM BOT (Unchanged, Now Unopposed) =======================
+# === WORKER HEART: TELEGRAM BOT (Unchanged, Stable) ==============================
 # =================================================================================
 def load_bot_data():
     if not os.path.exists(SETTINGS_FILE): save_bot_data()
@@ -169,7 +164,7 @@ def run_bot():
         load_bot_data()
         worker_app = ApplicationBuilder().token(BOT_TOKEN).build()
         worker_app.add_handler(CommandHandler("start", start)); worker_app.add_handler(CallbackQueryHandler(callback_query_handler))
-        logger.info("🚀 DATRIX Worker Heart (v9.0) is engaging polling sequence..."); worker_app.run_polling()
+        logger.info("🚀 DATRIX Worker Heart (v10.0) is engaging polling sequence..."); worker_app.run_polling()
     except InvalidToken: logger.critical("WORKER: CRITICAL FAILURE - The BOT_TOKEN is invalid. Halting.")
     except Exception as e: logger.critical(f"WORKER: CATASTROPHIC FAILURE: {e}", exc_info=True)
 
