@@ -1,5 +1,5 @@
 # main.py
-# VERSION 15.0: The Spark Protocol - FINAL & ALIVE
+# VERSION 16.0: The Autopsy Protocol
 
 import logging, os, sys, asyncio, re
 from functools import wraps
@@ -19,7 +19,7 @@ ADMIN_PASSWORD = os.environ.get('ADMIN_PASSWORD')
 SECRET_KEY = os.environ.get('SECRET_KEY', os.urandom(24).hex())
 
 # =================================================================================
-# === WEB HEAD: FLASK APPLICATION (Stable & Waiting) ==============================
+# === WEB HEAD: FLASK APPLICATION (Stable) ========================================
 # =================================================================================
 web_app = Flask(__name__, template_folder='templates'); web_app.secret_key = SECRET_KEY
 db.initialize_database()
@@ -88,7 +88,7 @@ async def broadcast_message_from_web(user_ids, message):
         except Exception as e: logger.warning(f"Broadcast failed for user {user_id}: {e}")
 
 # =================================================================================
-# === WORKER HEART: TELEGRAM BOT (Resurrected) ====================================
+# === WORKER HEART: TELEGRAM BOT (Under Autopsy) ==================================
 # =================================================================================
 def escape_markdown_v2(text: str) -> str:
     escape_chars = r'_*[]()~`>#+-=|{}.!'
@@ -96,7 +96,11 @@ def escape_markdown_v2(text: str) -> str:
 
 async def start(update, context):
     user = update.effective_user
+    # --- [AUTOPSY LOG] ---
+    logger.info(f"WORKER: /start received from user: ID={user.id}, Name='{user.full_name}', Username='{user.username}'.")
+    logger.info("WORKER: Passing user object to database for registration.")
     db.add_or_update_telegram_user(user)
+    
     if str(user.id) == ADMIN_ID:
         await update.message.reply_text("🚀 Welcome, Mission Control. Systems are online.", reply_markup=create_admin_keyboard())
     elif db.is_app_user(user.id):
@@ -123,7 +127,6 @@ async def callback_query_handler(update, context):
 
 async def handle_user_approval(query, context):
     applicant_id = int(query.data.split("_")[1])
-    # This is a dummy user object for the db function, which only needs the ID.
     db.create_app_user(TelegramUser(id=applicant_id, first_name="Approved User", is_bot=False))
     await query.edit_message_text(f"✅ Access Approved for applicant `{applicant_id}`.")
     await context.bot.send_message(chat_id=applicant_id, text="✅ Access Granted! Use /start to see available commands.")
@@ -147,26 +150,17 @@ def create_admin_keyboard():
     if url: buttons.append([InlineKeyboardButton("🖥️ Mission Control", url=url)])
     return InlineKeyboardMarkup(buttons)
 
-# --- [THE SPARK] ---
-# This function's only purpose is to build and run the bot application forever.
 def run_bot():
-    """Initializes and runs the Telegram bot processor."""
     if not all([BOT_TOKEN, ADMIN_ID]):
         logger.critical("WORKER: Critical configuration missing. Halting.")
         return
-
     db.initialize_database()
-    
     application = ApplicationBuilder().token(BOT_TOKEN).build()
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CallbackQueryHandler(callback_query_handler))
-    
     logger.info("WORKER: Life support active. Engaging polling.")
-    # This is the command to live. It blocks forever and keeps the process alive.
     application.run_polling()
 
 if __name__ == '__main__':
-    # This script is now a simple dispatcher.
-    # It either runs the bot or does nothing, allowing gunicorn to run the web_app.
     if len(sys.argv) > 1 and sys.argv[1] == '--run-bot':
         run_bot()
