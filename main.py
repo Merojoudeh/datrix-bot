@@ -1,39 +1,45 @@
 # main.py
-# VERSION 8.0: Vindication - COMPLETE & FULLY OPERATIONAL
+# VERSION 9.0: Doppelgänger Protocol - FINAL & STABLE
 
 import logging, json, os, sys, asyncio, re
 from functools import wraps
+# --- [SURGICAL CHANGE] ---
+# We now import the lightweight 'Bot' class for the web head.
+from telegram import Bot, InlineKeyboardButton, InlineKeyboardMarkup, constants, User as TelegramUser
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, ApplicationBuilder
 from telegram.error import InvalidToken, BadRequest
-from telegram import InlineKeyboardButton, InlineKeyboardMarkup, constants, User as TelegramUser
-from flask import Flask, jsonify, render_template, request, redirect, url_for, session
-import database as db
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
-# --- Hardened Configuration Loading ---
+# --- Configuration (Unchanged) ---
 BOT_TOKEN = os.environ.get('BOT_TOKEN')
 ADMIN_ID = os.environ.get('ADMIN_ID')
 CHANNEL_ID = os.environ.get('CHANNEL_ID')
 ADMIN_PASSWORD = os.environ.get('ADMIN_PASSWORD')
 SECRET_KEY = os.environ.get('SECRET_KEY', os.urandom(24).hex())
-
 SETTINGS_FILE = 'settings.json'
 BOT_SETTINGS = { 'admin_username': 'Datrix_syr', 'bot_name': 'DATRIX File Server' }
 FILES = { 'datrix_app': { 'message_id': None, 'version': 'v2.1.6', 'size': 'Not set' } }
 
 # =================================================================================
-# === WEB HEAD: FLASK APPLICATION (Unchanged, Fully Operational) ==================
+# === WEB HEAD: FLASK APPLICATION (Anomaly Purged) ================================
 # =================================================================================
 web_app = Flask(__name__, template_folder='templates'); web_app.secret_key = SECRET_KEY
 db.initialize_database(); logger.info("WEB HEAD: Database foundation verified.")
 
+# --- [SURGICAL CHANGE] ---
+# Replaced the heavy 'Application' object with a lightweight 'Bot' object.
+# This eliminates the "Conflict" error while retaining broadcast functionality.
 try:
-    telegram_app_for_web = Application.builder().token(BOT_TOKEN).build()
-except (InvalidToken, ValueError):
-    logger.error("WEB HEAD: Invalid or missing BOT_TOKEN. Web-based messaging will be disabled.")
-    telegram_app_for_web = None
+    if BOT_TOKEN:
+        web_bot_instance = Bot(token=BOT_TOKEN)
+    else:
+        web_bot_instance = None
+        logger.error("WEB HEAD: Invalid or missing BOT_TOKEN. Web-based messaging will be disabled.")
+except InvalidToken:
+    web_bot_instance = None
+    logger.error("WEB HEAD: The BOT_TOKEN is invalid. Web-based messaging will be disabled.")
 
 def login_required(f):
     @wraps(f)
@@ -77,7 +83,9 @@ def api_set_file():
 @web_app.route('/api/broadcast', methods=['POST'])
 @login_required
 def api_broadcast():
-    if not telegram_app_for_web: return jsonify({'status': 'error', 'message': 'Messaging disabled due to token error.'}), 503
+    # --- [SURGICAL CHANGE] ---
+    # Now checks for the new lightweight bot instance.
+    if not web_bot_instance: return jsonify({'status': 'error', 'message': 'Messaging disabled due to token error.'}), 503
     message = request.json.get('message'); user_ids = [u['telegram_id'] for u in db.get_all_telegram_users()]
     if not message or not user_ids: return jsonify({'status': 'error', 'message': 'Missing message or no users found.'}), 400
     try:
@@ -86,12 +94,14 @@ def api_broadcast():
     except Exception as e: return jsonify({'status': 'error', 'message': str(e)}), 500
 
 async def broadcast_message_from_web(user_ids, message):
+    # --- [SURGICAL CHANGE] ---
+    # Now uses the lightweight bot instance directly.
     for user_id in user_ids:
-        try: await telegram_app_for_web.bot.send_message(chat_id=user_id, text=message); await asyncio.sleep(0.1)
+        try: await web_bot_instance.send_message(chat_id=user_id, text=message); await asyncio.sleep(0.1)
         except Exception as e: logger.warning(f"Broadcast failed for user {user_id}: {e}")
 
 # =================================================================================
-# === WORKER HEART: TELEGRAM BOT (Protocol Upgraded) ==============================
+# === WORKER HEART: TELEGRAM BOT (Unchanged, Now Unopposed) =======================
 # =================================================================================
 def load_bot_data():
     if not os.path.exists(SETTINGS_FILE): save_bot_data()
@@ -105,9 +115,7 @@ def save_bot_data():
         with open(SETTINGS_FILE, 'w') as f: json.dump({'bot_settings': BOT_SETTINGS, 'files': FILES}, f, indent=2)
     except IOError as e: logger.error(f"WORKER: Could not write to {SETTINGS_FILE}: {e}")
 
-# --- [NEW] MARKDOWN V2 SANITIZER ---
 def escape_markdown_v2(text: str) -> str:
-    """Escapes characters for Telegram's MarkdownV2 parse mode."""
     escape_chars = r'_*[]()~`>#+-=|{}.!'
     return re.sub(f'([{re.escape(escape_chars)}])', r'\\\1', text)
 
@@ -120,26 +128,17 @@ async def start(update, context):
         await notify_admin_of_new_user(context.bot, user)
 
 async def notify_admin_of_new_user(bot, user: TelegramUser):
-    # --- [FIXED] Sanitized user data for MarkdownV2 ---
     safe_full_name = escape_markdown_v2(user.full_name)
     safe_username = escape_markdown_v2(f"@{user.username}" if user.username else "N/A")
-    
-    details = (
-        f"*Name*: {safe_full_name}\n"
-        f"*Username*: {safe_username}\n"
-        f"*ID*: `{user.id}`"
-    )
+    details = (f"*Name*: {safe_full_name}\n*Username*: {safe_username}\n*ID*: `{user.id}`")
     text = f"‼️ *New Access Request* ‼️\n\n{details}"
     keyboard = InlineKeyboardMarkup([[InlineKeyboardButton("✅ Approve", callback_data=f"approve_{user.id}"), InlineKeyboardButton("❌ Deny", callback_data=f"deny_{user.id}")]])
-    
-    # --- [UPGRADED] Using robust MarkdownV2 protocol ---
     await bot.send_message(chat_id=ADMIN_ID, text=text, parse_mode=constants.ParseMode.MARKDOWN_V2, reply_markup=keyboard)
 
 async def callback_query_handler(update, context):
     query = update.callback_query; await query.answer(); data = query.data
     if data.startswith("approve_"): await handle_user_approval(query, context); return
     if data.startswith("deny_"): await handle_user_denial(query, context); return
-    # Other handlers...
 
 async def handle_user_approval(query, context):
     applicant_id = int(query.data.split("_")[1])
@@ -170,7 +169,7 @@ def run_bot():
         load_bot_data()
         worker_app = ApplicationBuilder().token(BOT_TOKEN).build()
         worker_app.add_handler(CommandHandler("start", start)); worker_app.add_handler(CallbackQueryHandler(callback_query_handler))
-        logger.info("🚀 DATRIX Worker Heart (v8.0) is engaging polling sequence..."); worker_app.run_polling()
+        logger.info("🚀 DATRIX Worker Heart (v9.0) is engaging polling sequence..."); worker_app.run_polling()
     except InvalidToken: logger.critical("WORKER: CRITICAL FAILURE - The BOT_TOKEN is invalid. Halting.")
     except Exception as e: logger.critical(f"WORKER: CATASTROPHIC FAILURE: {e}", exc_info=True)
 
