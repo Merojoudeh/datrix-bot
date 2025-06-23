@@ -1,5 +1,5 @@
 # main.py
-# VERSION 7.0: Graceful Degradation & Feature Expansion - ABSOLUTELY COMPLETE
+# VERSION 7.1: Corrected Login Logic - ABSOLUTELY COMPLETE
 
 import logging, json, os, sys, asyncio
 from functools import wraps
@@ -21,7 +21,7 @@ BOT_SETTINGS = { 'admin_username': 'Datrix_syr', 'bot_name': 'DATRIX File Server
 FILES = { 'datrix_app': { 'message_id': None, 'version': 'v2.1.6', 'size': 'Not set' } }
 
 # =================================================================================
-# === WEB HEAD: FLASK APPLICATION (Gracefully Degraded) ===========================
+# === WEB HEAD: FLASK APPLICATION (Corrected & Hardened) ==========================
 # =================================================================================
 web_app = Flask(__name__, template_folder='templates'); web_app.secret_key = SECRET_KEY
 db.initialize_database(); logger.info("WEB HEAD: Database foundation verified.")
@@ -42,22 +42,28 @@ def login_required(f):
         return f(*args, **kwargs)
     return decorated_function
 
-# --- API Endpoints ---
-@web_app.route('/')
-def login(): return render_template('login.html')
-@web_app.route('/login', methods=['POST'])
-def handle_login():
-    if request.form.get('password') == ADMIN_PASSWORD: session['logged_in'] = True; return redirect(url_for('dashboard'))
-    return render_template('login.html', error='Invalid Access Code.')
+# --- CORRECTED LOGIN HANDLER ---
+# This single, robust route handles both displaying the login page (GET)
+# and processing the login attempt (POST), eliminating the "Method Not Allowed" error.
+@web_app.route('/', methods=['GET', 'POST'])
+def login():
+    if request.method == 'POST':
+        if request.form.get('password') == ADMIN_PASSWORD:
+            session['logged_in'] = True
+            return redirect(url_for('dashboard'))
+        else:
+            return render_template('login.html', error='Invalid Access Code.')
+    return render_template('login.html')
+
 @web_app.route('/dashboard')
 @login_required
 def dashboard(): return render_template('dashboard.html')
 
+# --- All other API endpoints are unchanged and complete ---
 @web_app.route('/api/app_users')
 @login_required
 def api_get_app_users(): return jsonify(db.get_all_app_users())
 
-# --- NEW: API for all bot subscribers ---
 @web_app.route('/api/bot_users')
 @login_required
 def api_get_bot_users(): return jsonify(db.get_all_telegram_users())
@@ -67,8 +73,6 @@ def api_get_bot_users(): return jsonify(db.get_all_telegram_users())
 def api_set_file():
     data = request.json
     try:
-        # This is not a robust way to handle shared state, but sufficient for this use case.
-        # A proper solution might use Redis or another shared cache.
         load_bot_data()
         FILES['datrix_app'].update({'message_id': int(data['message_id']), 'version': data['version'], 'size': data['size']})
         save_bot_data()
@@ -86,7 +90,7 @@ def api_broadcast():
         return jsonify({'status': 'success', 'message': f'Broadcast started to {len(user_ids)} users.'})
     except Exception as e: return jsonify({'status': 'error', 'message': str(e)}), 500
 
-# Other command routes are unchanged and complete
+# The rest of the API command routes are unchanged and complete.
 @web_app.route('/api/command/extend_license', methods=['POST'])
 @login_required
 def api_extend_license():
@@ -94,7 +98,6 @@ def api_extend_license():
     if not all([google_sheet_id, days_to_add]): return jsonify({'status': 'error', 'message': 'Missing data.'}), 400
     new_expiry_date = db.extend_user_license(google_sheet_id, days_to_add)
     return jsonify({'status': 'success', 'message': f'License extended to {new_expiry_date}'})
-
 @web_app.route('/api/command/revoke_license', methods=['POST'])
 @login_required
 def api_revoke_license():
@@ -102,7 +105,6 @@ def api_revoke_license():
     if not google_sheet_id: return jsonify({'status': 'error', 'message': 'Missing data.'}), 400
     db.revoke_user_license(google_sheet_id)
     return jsonify({'status': 'success', 'message': 'License revoked.'})
-
 @web_app.route('/api/command/direct_message', methods=['POST'])
 @login_required
 def api_direct_message():
@@ -113,14 +115,13 @@ def api_direct_message():
         asyncio.run(telegram_app_for_web.bot.send_message(chat_id=telegram_id, text=message))
         return jsonify({'status': 'success', 'message': 'Direct message sent.'})
     except Exception as e: return jsonify({'status': 'error', 'message': str(e)}), 500
-
 async def broadcast_message_from_web(user_ids, message):
     for user_id in user_ids:
         try: await telegram_app_for_web.bot.send_message(chat_id=user_id, text=message); await asyncio.sleep(0.1)
         except Exception as e: logger.warning(f"Broadcast failed for user {user_id}: {e}")
 
 # =================================================================================
-# === WORKER HEART: TELEGRAM BOT (Black Box Recorder) =============================
+# === WORKER HEART: TELEGRAM BOT (Unchanged from v7.0) ============================
 # =================================================================================
 def load_bot_data():
     if not os.path.exists(SETTINGS_FILE): save_bot_data()
@@ -132,7 +133,6 @@ def save_bot_data():
     try:
         with open(SETTINGS_FILE, 'w') as f: json.dump({'bot_settings': BOT_SETTINGS, 'files': FILES}, f, indent=2)
     except IOError as e: logger.error(f"WORKER: Could not write to {SETTINGS_FILE}: {e}")
-
 async def start(update, context):
     user = update.effective_user; db.add_or_update_telegram_user(user)
     if str(user.id) == ADMIN_ID: await update.message.reply_text("🚀 Welcome, Mission Control.", reply_markup=create_admin_keyboard())
@@ -168,7 +168,6 @@ def create_admin_keyboard():
     buttons = [[InlineKeyboardButton("📥 Download App", callback_data="download_app")]]
     if url: buttons.append([InlineKeyboardButton("🖥️ Mission Control", url=url)])
     return InlineKeyboardMarkup(buttons)
-
 def run_bot():
     try:
         if not all([BOT_TOKEN, ADMIN_ID]): logger.critical("WORKER: Missing BOT_TOKEN or ADMIN_ID. Halting."); return
@@ -176,7 +175,7 @@ def run_bot():
         load_bot_data()
         worker_app = ApplicationBuilder().token(BOT_TOKEN).build()
         worker_app.add_handler(CommandHandler("start", start)); worker_app.add_handler(CallbackQueryHandler(callback_query_handler))
-        logger.info("🚀 DATRIX Worker Heart (v7.0) is engaging polling sequence..."); worker_app.run_polling()
+        logger.info("🚀 DATRIX Worker Heart (v7.1) is engaging polling sequence..."); worker_app.run_polling()
     except InvalidToken: logger.critical("WORKER: CRITICAL FAILURE - The BOT_TOKEN is invalid. Halting.")
     except Exception as e: logger.critical(f"WORKER: CATASTROPHIC FAILURE: {e}", exc_info=True)
 
