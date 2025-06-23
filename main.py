@@ -139,6 +139,7 @@ def create_admin_keyboard():
     return InlineKeyboardMarkup(buttons)
 
 def run_bot():
+    worker_app = None
     try:
         if not all([BOT_TOKEN, ADMIN_ID]):
             logger.critical("WORKER: Critical configuration missing. Halting.")
@@ -149,8 +150,8 @@ def run_bot():
         worker_app.add_handler(CallbackQueryHandler(callback_query_handler))
         logger.info("SYSTEM ONLINE: Worker engaging polling sequence.")
     except Exception as e:
-        logger.critical(f"WORKER: CATASTROPHIC FAILURE: {e}", exc_info=True)
-
-if __name__ == '__main__':
-    if len(sys.argv) > 1 and sys.argv[1] == '--run-bot':
-        run_bot()
+        logger.critical(f"WORKER: CATASTROPHIC BOOT FAILURE: {e}", exc_info=True)
+        return
+        
+    if worker_app:
+        worker_app.run_polling()
