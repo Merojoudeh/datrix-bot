@@ -1,13 +1,15 @@
 # main.py
-# VERSION 10.0: Keystone Protocol - FINAL, INTEGRITY-CHECKED
+# VERSION 11.0: Integrity Protocol - ABSOLUTE FINALITY
 
 import logging, json, os, sys, asyncio, re
 from functools import wraps
 
-# --- [KEYSTONE RESTORED] ---
-# The critical Flask import lifeline has been restored. This resolves the NameError.
-from flask import Flask, jsonify, render_template, request, redirect, url_for, session
+# --- [SUPPLY LINE RESTORED] ---
+# The critical database module import has been restored.
+# This resolves the 'db' is not defined NameError.
+import database as db
 
+from flask import Flask, jsonify, render_template, request, redirect, url_for, session
 from telegram import Bot, InlineKeyboardButton, InlineKeyboardMarkup, constants, User as TelegramUser
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, ApplicationBuilder
 from telegram.error import InvalidToken, BadRequest
@@ -15,7 +17,7 @@ from telegram.error import InvalidToken, BadRequest
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
-# --- Configuration (Unchanged) ---
+# --- Configuration (Verified) ---
 BOT_TOKEN = os.environ.get('BOT_TOKEN')
 ADMIN_ID = os.environ.get('ADMIN_ID')
 CHANNEL_ID = os.environ.get('CHANNEL_ID')
@@ -26,7 +28,7 @@ BOT_SETTINGS = { 'admin_username': 'Datrix_syr', 'bot_name': 'DATRIX File Server
 FILES = { 'datrix_app': { 'message_id': None, 'version': 'v2.1.6', 'size': 'Not set' } }
 
 # =================================================================================
-# === WEB HEAD: FLASK APPLICATION (Foundation Restored) ===========================
+# === WEB HEAD: FLASK APPLICATION (Integrity Verified) ============================
 # =================================================================================
 web_app = Flask(__name__, template_folder='templates'); web_app.secret_key = SECRET_KEY
 db.initialize_database(); logger.info("WEB HEAD: Database foundation verified.")
@@ -96,7 +98,7 @@ async def broadcast_message_from_web(user_ids, message):
         except Exception as e: logger.warning(f"Broadcast failed for user {user_id}: {e}")
 
 # =================================================================================
-# === WORKER HEART: TELEGRAM BOT (Unchanged, Stable) ==============================
+# === WORKER HEART: TELEGRAM BOT (Integrity Verified) =============================
 # =================================================================================
 def load_bot_data():
     if not os.path.exists(SETTINGS_FILE): save_bot_data()
@@ -112,7 +114,7 @@ def save_bot_data():
 
 def escape_markdown_v2(text: str) -> str:
     escape_chars = r'_*[]()~`>#+-=|{}.!'
-    return re.sub(f'([{re.escape(escape_chars)}])', r'\\\1', text)
+    return re.sub(f'([{re.escape(chars)}])', r'\\\1', text)
 
 async def start(update, context):
     user = update.effective_user; db.add_or_update_telegram_user(user)
@@ -164,7 +166,7 @@ def run_bot():
         load_bot_data()
         worker_app = ApplicationBuilder().token(BOT_TOKEN).build()
         worker_app.add_handler(CommandHandler("start", start)); worker_app.add_handler(CallbackQueryHandler(callback_query_handler))
-        logger.info("🚀 DATRIX Worker Heart (v10.0) is engaging polling sequence..."); worker_app.run_polling()
+        logger.info("🚀 DATRIX Worker Heart (v11.0) is engaging polling sequence..."); worker_app.run_polling()
     except InvalidToken: logger.critical("WORKER: CRITICAL FAILURE - The BOT_TOKEN is invalid. Halting.")
     except Exception as e: logger.critical(f"WORKER: CATASTROPHIC FAILURE: {e}", exc_info=True)
 
