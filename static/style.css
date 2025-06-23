@@ -1,0 +1,161 @@
+/* static/style.css */
+/* Phoenix Protocol UI Manifest */
+
+@import url('https://fonts.googleapis.com/css2?family=Roboto+Mono:wght@300;400;700&display=swap');
+
+:root {
+    --primary-bg: #1a1a1a;
+    --secondary-bg: #2a2a2a;
+    --border-color: #444;
+    --text-color: #e0e0e0;
+    --primary-accent: #00aaff;
+    --success-color: #00ff7f;
+    --error-color: #ff4d4d;
+    --font-main: 'Roboto Mono', monospace;
+}
+
+body {
+    font-family: var(--font-main);
+    background-color: var(--primary-bg);
+    color: var(--text-color);
+    margin: 0;
+    padding: 2rem;
+    display: flex;
+    justify-content: center;
+    align-items: flex-start;
+    min-height: 100vh;
+}
+
+.container {
+    width: 90%;
+    max-width: 1200px;
+    background-color: var(--secondary-bg);
+    border-radius: 8px;
+    border: 1px solid var(--border-color);
+    padding: 2rem;
+    box-shadow: 0 0 20px rgba(0, 170, 255, 0.1);
+}
+
+h1 {
+    color: var(--primary-accent);
+    text-align: center;
+    font-weight: 700;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    border-bottom: 1px solid var(--border-color);
+    padding-bottom: 1rem;
+    margin-bottom: 2rem;
+}
+
+.grid-container {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 2rem;
+}
+
+.section {
+    background-color: var(--primary-bg);
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    padding: 1.5rem;
+}
+
+h2 {
+    color: var(--text-color);
+    font-weight: 400;
+    border-bottom: 1px solid var(--border-color);
+    padding-bottom: 0.5rem;
+    margin-top: 0;
+}
+
+table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-top: 1rem;
+}
+
+thead {
+    background-color: var(--secondary-bg);
+}
+
+th, td {
+    padding: 12px 15px;
+    text-align: left;
+    border-bottom: 1px solid var(--border-color);
+}
+
+th {
+    font-weight: 700;
+}
+
+tbody tr:hover {
+    background-color: #333;
+}
+
+.status-approved {
+    color: var(--success-color);
+    font-weight: bold;
+}
+
+.status-pending {
+    color: #ffd700;
+    font-weight: bold;
+}
+
+textarea {
+    width: calc(100% - 20px);
+    background-color: var(--secondary-bg);
+    border: 1px solid var(--border-color);
+    color: var(--text-color);
+    padding: 10px;
+    border-radius: 4px;
+    font-family: var(--font-main);
+    min-height: 150px;
+    resize: vertical;
+}
+
+.broadcast-controls {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-top: 1rem;
+}
+
+select {
+    background-color: var(--secondary-bg);
+    border: 1px solid var(--border-color);
+    color: var(--text-color);
+    padding: 10px;
+    border-radius: 4px;
+    font-family: var(--font-main);
+}
+
+button {
+    background-color: var(--primary-accent);
+    color: var(--primary-bg);
+    border: none;
+    padding: 10px 20px;
+    font-family: var(--font-main);
+    font-weight: 700;
+    text-transform: uppercase;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: background-color 0.3s ease, transform 0.1s ease;
+}
+
+button:hover {
+    background-color: var(--success-color);
+}
+
+button:active {
+    transform: scale(0.98);
+}
+
+#status-message {
+    margin-top: 1rem;
+    padding: 10px;
+    border-radius: 4px;
+    text-align: center;
+    font-weight: bold;
+    display: none; /* Hidden by default */
+}
