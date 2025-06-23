@@ -1,13 +1,21 @@
 # database.py
-# VERSION 2.0: Phoenix Protocol - Hardened Core
+# VERSION 3.0: Centralized Consciousness Protocol
 
 import sqlite3
 import logging
+import os
 
 logger = logging.getLogger(__name__)
-DATABASE_FILE = 'mission_control.db'
+
+# --- [THE FIX] ---
+# The database now lives in the shared volume mounted at /data.
+# This ensures both the web app and the bot worker access the SAME file.
+VOLUME_PATH = '/data'
+DATABASE_FILE = os.path.join(VOLUME_PATH, 'mission_control.db')
 
 def get_db_connection():
+    # Ensure the directory exists before trying to connect
+    os.makedirs(VOLUME_PATH, exist_ok=True) 
     conn = sqlite3.connect(DATABASE_FILE)
     conn.row_factory = sqlite3.Row
     return conn
@@ -15,7 +23,6 @@ def get_db_connection():
 def initialize_database():
     conn = get_db_connection()
     cursor = conn.cursor()
-    # User tables (unchanged)
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS telegram_users (
             telegram_id INTEGER PRIMARY KEY,
@@ -26,8 +33,6 @@ def initialize_database():
             join_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
     ''')
-    # --- [NEW] File State Table ---
-    # This replaces the volatile settings.json file
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS bot_files (
             file_key TEXT PRIMARY KEY,
@@ -36,13 +41,11 @@ def initialize_database():
             size TEXT
         )
     ''')
-    # Ensure the default app file entry exists
     cursor.execute("INSERT OR IGNORE INTO bot_files (file_key) VALUES (?)", ('datrix_app',))
     conn.commit()
     conn.close()
-    logger.info("DATABASE: Phoenix Core initialized successfully.")
+    logger.info(f"DATABASE: Consciousness synchronized at {DATABASE_FILE}")
 
-# --- User Functions (unchanged) ---
 def add_or_update_telegram_user(user):
     conn = get_db_connection()
     conn.execute('''
@@ -61,8 +64,7 @@ def create_app_user(user):
     conn.execute("UPDATE telegram_users SET is_app_user = TRUE WHERE telegram_id = ?", (user.id,))
     conn.commit()
     conn.close()
-    logger.info(f"Successfully created app user: {user.full_name} ({user.id})")
-    return True
+    logger.info(f"Successfully created app user for ID: {user.id}")
 
 def is_app_user(telegram_id):
     conn = get_db_connection()
@@ -76,16 +78,13 @@ def get_all_telegram_users():
     conn.close()
     return [dict(row) for row in users]
 
-# --- [NEW] File State Functions ---
 def get_file_info(file_key='datrix_app'):
-    """Retrieves file info from the database."""
     conn = get_db_connection()
     info = conn.execute("SELECT * FROM bot_files WHERE file_key = ?", (file_key,)).fetchone()
     conn.close()
     return dict(info) if info else None
 
 def set_file_info(message_id: int, version: str, size: str, file_key='datrix_app'):
-    """Saves file info to the database."""
     conn = get_db_connection()
     conn.execute('''
         UPDATE bot_files 
@@ -94,5 +93,5 @@ def set_file_info(message_id: int, version: str, size: str, file_key='datrix_app
     ''', (message_id, version, size, file_key))
     conn.commit()
     conn.close()
-    logger.info(f"DATABASE: File info updated for {file_key}. Version: {version}")
+    logger.info(f"DATABASE: File info updated in shared consciousness. Version: {version}")
     return True
