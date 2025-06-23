@@ -1,150 +1,130 @@
+<!-- templates/dashboard.html -->
+<!-- Phoenix Protocol Blueprint v1.0 -->
 <!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Mission Control</title>
-    <style>
-        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; background-color: #f8f9fa; color: #212529; margin: 0; padding: 2rem; }
-        .container { max-width: 960px; margin: auto; background: #fff; padding: 2rem; border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
-        h1, h2 { border-bottom: 2px solid #dee2e6; padding-bottom: 0.5rem; margin-top: 0; }
-        .form-group { margin-bottom: 1rem; }
-        label { display: block; margin-bottom: 0.5rem; font-weight: bold; }
-        input[type="text"], input[type="number"], textarea { width: 100%; padding: 0.5rem; border: 1px solid #ced4da; border-radius: 4px; box-sizing: border-box; }
-        button { background-color: #007bff; color: white; padding: 0.6rem 1.2rem; border: none; border-radius: 4px; cursor: pointer; font-size: 1rem; }
-        button:hover { background-color: #0056b3; }
-        .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 2rem; }
-        #user-list { list-style-type: none; padding: 0; }
-        #user-list li { background: #e9ecef; padding: 0.5rem; border-radius: 4px; margin-bottom: 0.5rem; }
-        .status { margin-top: 1rem; padding: 1rem; border-radius: 4px; display: none; }
-        .status.success { background-color: #d4edda; color: #155724; }
-        .status.error { background-color: #f8d7da; color: #721c24; }
-    </style>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
 </head>
 <body>
     <div class="container">
-        <h1>🚀 Mission Control</h1>
-        <div class="grid">
-            <section id="file-management">
-                <h2>File Management</h2>
-                <form id="file-form">
-                    <div class="form-group">
-                        <label for="message-id">File Message ID</label>
-                        <input type="number" id="message-id" required>
-                    </div>
-                    <div class="form-group">
-                        <label for="version">Version</label>
-                        <input type="text" id="version" required>
-                    </div>
-                    <div class="form-group">
-                        <label for="size">Size (e.g., 25.4 MB)</label>
-                        <input type="text" id="size" required>
-                    </div>
-                    <button type="submit">Set File</button>
-                </form>
-            </section>
-            <section id="broadcast">
-                <h2>Broadcast Message</h2>
-                <form id="broadcast-form">
-                    <div class="form-group">
-                        <label for="broadcast-message">Message</label>
-                        <textarea id="broadcast-message" rows="4" required></textarea>
-                    </div>
-                    <button type="submit">Send Broadcast</button>
-                </form>
-            </section>
+        <h1>Datrix Mission Control</h1>
+
+        <div class="grid-container">
+            <div class="section" id="census-section">
+                <h2>User Census</h2>
+                <table id="users-table">
+                    <thead>
+                        <tr>
+                            <th>Telegram ID</th>
+                            <th>First Name</th>
+                            <th>Username</th>
+                            <th>Status</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <!-- User data will be injected here by the script -->
+                    </tbody>
+                </table>
+            </div>
+
+            <div class="section" id="broadcast-section">
+                <h2>Broadcast Operations</h2>
+                <textarea id="broadcast-message" placeholder="Compose your transmission..."></textarea>
+                <div class="broadcast-controls">
+                    <select id="broadcast-target">
+                        <option value="approved">To: Approved Users</option>
+                        <option value="all">To: All Users</option>
+                    </select>
+                    <button id="send-broadcast">Transmit</button>
+                </div>
+                <div id="status-message"></div>
+            </div>
         </div>
-        <div id="status-area" class="status"></div>
-        <section id="users">
-            <h2>Bot Users (<span id="user-count">0</span>)</h2>
-            <ul id="user-list"></ul>
-        </section>
     </div>
 
     <script>
-        document.addEventListener('DOMContentLoaded', () => {
-            const fileForm = document.getElementById('file-form');
-            const broadcastForm = document.getElementById('broadcast-form');
-            const statusArea = document.getElementById('status-area');
-            const userList = document.getElementById('user-list');
-            const userCount = document.getElementById('user-count');
+        // Phoenix Protocol Interface Script
+        document.addEventListener('DOMContentLoaded', function() {
+            const usersTableBody = document.querySelector('#users-table tbody');
+            const broadcastButton = document.getElementById('send-broadcast');
+            const broadcastMessage = document.getElementById('broadcast-message');
+            const broadcastTarget = document.getElementById('broadcast-target');
+            const statusMessage = document.getElementById('status-message');
 
-            // Function to display status messages
-            const showStatus = (message, isError = false) => {
-                statusArea.textContent = message;
-                statusArea.className = isError ? 'status error' : 'status success';
-                statusArea.style.display = 'block';
-                setTimeout(() => { statusArea.style.display = 'none'; }, 5000);
-            };
-
-            // Fetch and display users on page load
-            const fetchUsers = async () => {
+            // Fetch and display users
+            async function loadUsers() {
                 try {
                     const response = await fetch('/api/bot_users');
-                    if (!response.ok) throw new Error('Failed to fetch users.');
+                    if (!response.ok) throw new Error(`Network response was not ok: ${response.statusText}`);
                     const users = await response.json();
                     
-                    userList.innerHTML = ''; // Clear current list
+                    usersTableBody.innerHTML = ''; // Clear existing data
                     users.forEach(user => {
-                        const li = document.createElement('li');
-                        const status = user.is_app_user ? '✅ Approved' : '⏳ Pending';
-                        li.textContent = `${user.first_name} (@${user.user_name || 'N/A'}) - ${status}`;
-                        userList.appendChild(li);
+                        const row = usersTableBody.insertRow();
+                        row.innerHTML = `
+                            <td>${user.telegram_id}</td>
+                            <td>${user.first_name || 'N/A'}</td>
+                            <td>${user.user_name ? '@' + user.user_name : 'N/A'}</td>
+                            <td>
+                                <span class="status-${user.is_app_user ? 'approved' : 'pending'}">
+                                    ${user.is_app_user ? 'Approved' : 'Pending'}
+                                </span>
+                            </td>
+                        `;
                     });
-                    userCount.textContent = users.length;
                 } catch (error) {
-                    showStatus(error.message, true);
+                    console.error('Failed to load user census:', error);
+                    usersTableBody.innerHTML = '<tr><td colspan="4" style="color: var(--error-color);">Error fetching user data.</td></tr>';
                 }
-            };
+            }
 
-            // Handle File Form Submission
-            fileForm.addEventListener('submit', async (e) => {
-                e.preventDefault();
-                const data = {
-                    message_id: document.getElementById('message-id').value,
-                    version: document.getElementById('version').value,
-                    size: document.getElementById('size').value,
-                };
-
-                try {
-                    const response = await fetch('/api/set_file', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify(data)
-                    });
-                    const result = await response.json();
-                    if (!response.ok) throw new Error(result.message);
-                    showStatus(result.message);
-                    fileForm.reset();
-                } catch (error) {
-                    showStatus(error.message, true);
+            // Send broadcast message
+            broadcastButton.addEventListener('click', async () => {
+                const message = broadcastMessage.value.trim();
+                const target = broadcastTarget.value;
+                if (!message) {
+                    alert('Cannot transmit an empty message.');
+                    return;
                 }
-            });
 
-            // Handle Broadcast Form Submission
-            broadcastForm.addEventListener('submit', async (e) => {
-                e.preventDefault();
-                const data = {
-                    message: document.getElementById('broadcast-message').value
-                };
+                broadcastButton.disabled = true;
+                broadcastButton.textContent = 'Transmitting...';
+                statusMessage.style.display = 'none';
 
                 try {
                     const response = await fetch('/api/broadcast', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify(data)
+                        body: JSON.stringify({ message, target })
                     });
                     const result = await response.json();
-                    if (!response.ok) throw new Error(result.message);
-                    showStatus(result.message);
-                    broadcastForm.reset();
+
+                    statusMessage.textContent = result.message;
+                    if (response.ok) {
+                        statusMessage.style.backgroundColor = 'rgba(0, 255, 127, 0.1)';
+                        statusMessage.style.color = 'var(--success-color)';
+                        broadcastMessage.value = ''; // Clear message on success
+                    } else {
+                        throw new Error(result.message);
+                    }
                 } catch (error) {
-                    showStatus(error.message, true);
+                    statusMessage.textContent = `Broadcast Failed: ${error.message}`;
+                    statusMessage.style.backgroundColor = 'rgba(255, 77, 77, 0.1)';
+                    statusMessage.style.color = 'var(--error-color)';
+                } finally {
+                    statusMessage.style.display = 'block';
+                    broadcastButton.disabled = false;
+                    broadcastButton.textContent = 'Transmit';
                 }
             });
 
-            // Initial fetch of users
-            fetchUsers();
+            // Initial load
+            loadUsers();
+            // Refresh census every 30 seconds
+            setInterval(loadUsers, 30000);
         });
     </script>
 </body>
