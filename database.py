@@ -1,13 +1,13 @@
 # database.py
-# VERSION 5.0: The Citadel Protocol
+# VERSION 5.1: The Compliance Directive
 
 import psycopg2
+import psycopg2.extras  # <-- FORCED COMPLIANCE. This line is the entire fix.
 import logging
 import os
 
 logger = logging.getLogger(__name__)
 
-# This single environment variable is the key to the Citadel.
 DATABASE_URL = os.environ.get('DATABASE_URL')
 
 def get_db_connection():
@@ -26,7 +26,6 @@ def initialize_database():
     """Initializes the database schema in PostgreSQL."""
     conn = get_db_connection()
     cursor = conn.cursor()
-    # Use "IF NOT EXISTS" for robust, repeatable initialization.
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS telegram_users (
             telegram_id BIGINT PRIMARY KEY,
@@ -45,7 +44,6 @@ def initialize_database():
             size TEXT
         )
     ''')
-    # Use "ON CONFLICT DO NOTHING" for safe, repeatable inserts.
     cursor.execute("INSERT INTO bot_files (file_key) VALUES ('datrix_app') ON CONFLICT (file_key) DO NOTHING")
     conn.commit()
     cursor.close()
@@ -73,8 +71,6 @@ def add_or_update_telegram_user(user):
     except Exception as e:
         logger.error(f"DATABASE: A critical error occurred writing user {user.id} to the Citadel: {e}", exc_info=True)
 
-# --- All other functions remain conceptually the same but use psycopg2 ---
-
 def create_app_user(user):
     conn = get_db_connection()
     cursor = conn.cursor()
@@ -95,6 +91,7 @@ def is_app_user(telegram_id):
 
 def get_all_telegram_users():
     conn = get_db_connection()
+    # This line will now succeed because we forced the import of psycopg2.extras
     cursor = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
     cursor.execute("SELECT telegram_id, first_name, user_name, is_app_user FROM telegram_users ORDER BY join_date DESC")
     users = [dict(row) for row in cursor.fetchall()]
