@@ -1,167 +1,188 @@
 # database.py
-# VERSION 5.3: Phoenix Protocol Upgrade
+# The Citadel, now with a Communication Nexus.
 
-import psycopg2
-import psycopg2.extras
-import logging
 import os
+import psycopg2
+import logging
+from dataclasses import dataclass
 
-# ... (all existing code from the top down to get_all_telegram_users remains the same) ...
+# --- Logging ---
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+logger = logging.getLogger("database")
 
-logger = logging.getLogger(__name__)
+# --- Data Models ---
+@dataclass
+class TelegramUser:
+    telegram_id: int
+    first_name: str
+    user_name: str
+    is_app_user: bool
 
-DATABASE_URL = os.environ.get('DATABASE_URL')
-
+# --- Connection ---
 def get_db_connection():
-    if not DATABASE_URL:
-        logger.critical("DATABASE: DATABASE_URL is not set. The Citadel is unreachable.")
-        raise ValueError("DATABASE_URL environment variable not set.")
-    try:
-        conn = psycopg2.connect(DATABASE_URL)
-        return conn
-    except psycopg2.OperationalError as e:
-        logger.error(f"DATABASE: Could not connect to the Citadel. {e}", exc_info=True)
-        raise
+    return psycopg2.connect(os.environ['DATABASE_URL'])
 
+# --- Initialization ---
 def initialize_database():
     conn = get_db_connection()
-    cursor = conn.cursor()
-    cursor.execute('''
+    cur = conn.cursor()
+    cur.execute("""
         CREATE TABLE IF NOT EXISTS telegram_users (
             telegram_id BIGINT PRIMARY KEY,
             first_name TEXT,
-            last_name TEXT,
-            user_name TEXT,
-            is_app_user BOOLEAN DEFAULT FALSE,
-            join_date TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
-        )
-    ''')
-    cursor.execute('''
-        CREATE TABLE IF NOT EXISTS bot_files (
-            file_key TEXT PRIMARY KEY,
+            user_name TEXT
+        );
+    """)
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS app_users (
+            telegram_id BIGINT PRIMARY KEY REFERENCES telegram_users(telegram_id)
+        );
+    """)
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS file_storage (
+            key TEXT PRIMARY KEY,
             message_id BIGINT,
             from_chat_id BIGINT,
             version TEXT,
             size TEXT
-        )
-    ''')
-    cursor.execute("ALTER TABLE bot_files ADD COLUMN IF NOT EXISTS from_chat_id BIGINT;")
-    cursor.execute("INSERT INTO bot_files (file_key) VALUES ('datrix_app') ON CONFLICT (file_key) DO NOTHING")
+        );
+    """)
+    # --- THE COMMUNICATION NEXUS TABLE ---
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS broadcast_queue (
+            id SERIAL PRIMARY KEY,
+            target_audience TEXT NOT NULL,
+            message_text TEXT NOT NULL,
+            is_sent BOOLEAN DEFAULT FALSE,
+            created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+        );
+    """)
     conn.commit()
-    cursor.close()
+    cur.close()
     conn.close()
     logger.info("DATABASE: Consciousness synchronized with the Citadel (PostgreSQL).")
 
+# --- User Management ---
 def add_or_update_telegram_user(user):
-    sql = '''
-        INSERT INTO telegram_users (telegram_id, first_name, last_name, user_name)
-        VALUES (%s, %s, %s, %s)
+    conn = get_db_connection()
+    cur = conn.cursor()
+    cur.execute("""
+        INSERT INTO telegram_users (telegram_id, first_name, user_name)
+        VALUES (%s, %s, %s)
         ON CONFLICT (telegram_id) DO UPDATE SET
             first_name = EXCLUDED.first_name,
-            last_name = EXCLUDED.last_name,
-            user_name = EXCLUDED.user_name
-    '''
-    try:
-        conn = get_db_connection()
-        cursor = conn.cursor()
-        cursor.execute(sql, (user.id, user.first_name, user.last_name, user.username))
-        conn.commit()
-        cursor.close()
-        conn.close()
-        logger.info(f"DATABASE: User {user.id} successfully written to the Citadel.")
-    except Exception as e:
-        logger.error(f"DATABASE: A critical error occurred writing user {user.id} to the Citadel: {e}", exc_info=True)
-
-def get_telegram_user_by_id(telegram_id):
-    conn = get_db_connection()
-    cursor = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
-    cursor.execute("SELECT * FROM telegram_users WHERE telegram_id = %s", (telegram_id,))
-    user_data = cursor.fetchone()
-    cursor.close()
-    conn.close()
-    if not user_data: return None
-    # Reconstruct a simple user-like object for compatibility
-    return type('TelegramUser', (object,), dict(user_data))()
-
-
-def create_app_user(user_id): # Simplified to just need the ID
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    cursor.execute("UPDATE telegram_users SET is_app_user = TRUE WHERE telegram_id = %s", (user_id,))
+            user_name = EXCLUDED.user_name;
+    """, (user.id, user.first_name, user.username))
     conn.commit()
-    cursor.close()
+    cur.close()
     conn.close()
-    logger.info(f"Successfully approved user for ID: {user_id}")
+
+def create_app_user(telegram_id):
+    conn = get_db_connection()
+    cur = conn.cursor()
+    cur.execute("INSERT INTO app_users (telegram_id) VALUES (%s) ON CONFLICT DO NOTHING;", (telegram_id,))
+    conn.commit()
+    cur.close()
+    conn.close()
 
 def is_app_user(telegram_id):
     conn = get_db_connection()
-    cursor = conn.cursor()
-    cursor.execute("SELECT is_app_user FROM telegram_users WHERE telegram_id = %s", (telegram_id,))
-    user = cursor.fetchone()
-    cursor.close()
+    cur = conn.cursor()
+    cur.execute("SELECT 1 FROM app_users WHERE telegram_id = %s;", (telegram_id,))
+    result = cur.fetchone()
+    cur.close()
     conn.close()
-    return user and user[0]
+    return result is not None
 
 def get_all_telegram_users():
     conn = get_db_connection()
-    cursor = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
-    cursor.execute("SELECT telegram_id, first_name, user_name, is_app_user FROM telegram_users ORDER BY join_date DESC")
-    users = [dict(row) for row in cursor.fetchall()]
-    cursor.close()
+    cur = conn.cursor()
+    cur.execute("""
+        SELECT tu.telegram_id, tu.first_name, tu.user_name,
+               CASE WHEN au.telegram_id IS NOT NULL THEN true ELSE false END as is_app_user
+        FROM telegram_users tu
+        LEFT JOIN app_users au ON tu.telegram_id = au.telegram_id
+        ORDER BY tu.first_name;
+    """)
+    users = [TelegramUser(*row) for row in cur.fetchall()]
+    cur.close()
     conn.close()
-    return users
+    return [user.__dict__ for user in users]
 
-# --- NEW FUNCTION FOR BROADCASTING ---
-def get_user_ids_for_broadcast(target='approved'):
-    """
-    Retrieves user IDs based on the target audience.
-    'approved': Only users with is_app_user = TRUE.
-    'all': All users in the database.
-    """
+def get_telegram_user_by_id(user_id):
     conn = get_db_connection()
-    cursor = conn.cursor()
-    if target == 'all':
-        cursor.execute("SELECT telegram_id FROM telegram_users")
-    else: # Default to 'approved' for safety
-        cursor.execute("SELECT telegram_id FROM telegram_users WHERE is_app_user = TRUE")
-    
-    user_ids = [row[0] for row in cursor.fetchall()]
-    cursor.close()
+    cur = conn.cursor()
+    cur.execute("SELECT telegram_id, first_name, user_name FROM telegram_users WHERE telegram_id = %s;", (user_id,))
+    row = cur.fetchone()
+    cur.close()
+    conn.close()
+    return TelegramUser(row[0], row[1], row[2], is_app_user(user_id)) if row else None
+
+def get_user_ids_for_broadcast(target):
+    conn = get_db_connection()
+    cur = conn.cursor()
+    if target == 'approved':
+        cur.execute("SELECT telegram_id FROM app_users;")
+    else: # 'all'
+        cur.execute("SELECT telegram_id FROM telegram_users;")
+    user_ids = [row[0] for row in cur.fetchall()]
+    cur.close()
     conn.close()
     return user_ids
 
-# --- The rest of the file info functions remain the same ---
-
-def get_file_info(file_key='datrix_app'):
+# --- File Management ---
+def set_file_info(message_id, from_chat_id, version, size, key='datrix_app'):
     conn = get_db_connection()
-    cursor = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
-    cursor.execute("SELECT * FROM bot_files WHERE file_key = %s", (file_key,))
-    info = cursor.fetchone()
-    cursor.close()
-    conn.close()
-    return dict(info) if info else None
-
-def set_file_info(message_id: int, from_chat_id: int, version: str, size: str, file_key='datrix_app'):
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    cursor.execute('''
-        UPDATE bot_files 
-        SET message_id = %s, from_chat_id = %s, version = %s, size = %s
-        WHERE file_key = %s
-    ''', (message_id, from_chat_id, version, size, file_key))
+    cur = conn.cursor()
+    cur.execute("""
+        INSERT INTO file_storage (key, message_id, from_chat_id, version, size)
+        VALUES (%s, %s, %s, %s, %s)
+        ON CONFLICT(key) DO UPDATE SET
+            message_id = EXCLUDED.message_id,
+            from_chat_id = EXCLUDED.from_chat_id,
+            version = EXCLUDED.version,
+            size = EXCLUDED.size;
+    """, (key, message_id, from_chat_id, version, size))
     conn.commit()
-    cursor.close()
+    cur.close()
     conn.close()
-    logger.info(f"DATABASE: File info updated in Citadel. Origin: {from_chat_id}, ID: {message_id}, Version: {version}")
-    return True
 
-async def download_app_handler(query, context):
-    file_info = get_file_info('datrix_app')
-    if file_info and file_info.get('message_id') and file_info.get('from_chat_id'):
-        await context.bot.forward_message(
-            chat_id=query.from_user.id,
-            from_chat_id=file_info['from_chat_id'],
-            message_id=file_info['message_id']
-        )
-    else:
-        await query.message.reply_text("📂 The file is not yet available from Mission Control. The Admin must upload it first.")
+def get_file_info(key='datrix_app'):
+    conn = get_db_connection()
+    cur = conn.cursor()
+    cur.execute("SELECT message_id, from_chat_id, version, size FROM file_storage WHERE key = %s;", (key,))
+    row = cur.fetchone()
+    cur.close()
+    conn.close()
+    return {'message_id': row[0], 'from_chat_id': row[1], 'version': row[2], 'size': row[3]} if row else None
+
+# --- Broadcast Queue Management ---
+def queue_broadcast(target, message):
+    conn = get_db_connection()
+    cur = conn.cursor()
+    cur.execute(
+        "INSERT INTO broadcast_queue (target_audience, message_text) VALUES (%s, %s);",
+        (target, message)
+    )
+    conn.commit()
+    cur.close()
+    conn.close()
+
+def get_pending_broadcasts():
+    conn = get_db_connection()
+    cur = conn.cursor()
+    cur.execute(
+        "SELECT id, target_audience, message_text FROM broadcast_queue WHERE is_sent = FALSE ORDER BY created_at;"
+    )
+    jobs = cur.fetchall()
+    cur.close()
+    conn.close()
+    return jobs
+
+def mark_broadcast_as_sent(job_id):
+    conn = get_db_connection()
+    cur = conn.cursor()
+    cur.execute("UPDATE broadcast_queue SET is_sent = TRUE WHERE id = %s;", (job_id,))
+    conn.commit()
+    cur.close()
+    conn.close()
