@@ -1,18 +1,13 @@
 # main.py
-# VERSION 11.0: Integrity Protocol - ABSOLUTE FINALITY
+# VERSION 12.0: Phoenix Protocol - ABSOLUTE & FINAL
 
-import logging, json, os, sys, asyncio, re
+import logging, os, sys, asyncio, re
 from functools import wraps
-
-# --- [SUPPLY LINE RESTORED] ---
-# The critical database module import has been restored.
-# This resolves the 'db' is not defined NameError.
 import database as db
-
 from flask import Flask, jsonify, render_template, request, redirect, url_for, session
 from telegram import Bot, InlineKeyboardButton, InlineKeyboardMarkup, constants, User as TelegramUser
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, ApplicationBuilder
-from telegram.error import InvalidToken, BadRequest
+from telegram.error import InvalidToken
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
@@ -20,27 +15,19 @@ logger = logging.getLogger(__name__)
 # --- Configuration (Verified) ---
 BOT_TOKEN = os.environ.get('BOT_TOKEN')
 ADMIN_ID = os.environ.get('ADMIN_ID')
-CHANNEL_ID = os.environ.get('CHANNEL_ID')
 ADMIN_PASSWORD = os.environ.get('ADMIN_PASSWORD')
 SECRET_KEY = os.environ.get('SECRET_KEY', os.urandom(24).hex())
-SETTINGS_FILE = 'settings.json'
-BOT_SETTINGS = { 'admin_username': 'Datrix_syr', 'bot_name': 'DATRIX File Server' }
-FILES = { 'datrix_app': { 'message_id': None, 'version': 'v2.1.6', 'size': 'Not set' } }
 
 # =================================================================================
-# === WEB HEAD: FLASK APPLICATION (Integrity Verified) ============================
+# === WEB HEAD: FLASK APPLICATION (Rebuilt & Hardened) ============================
 # =================================================================================
 web_app = Flask(__name__, template_folder='templates'); web_app.secret_key = SECRET_KEY
-db.initialize_database(); logger.info("WEB HEAD: Database foundation verified.")
+db.initialize_database()
 
 try:
-    if BOT_TOKEN: web_bot_instance = Bot(token=BOT_TOKEN)
-    else:
-        web_bot_instance = None
-        logger.error("WEB HEAD: Invalid or missing BOT_TOKEN. Web-based messaging will be disabled.")
-except InvalidToken:
-    web_bot_instance = None
-    logger.error("WEB HEAD: The BOT_TOKEN is invalid. Web-based messaging will be disabled.")
+    web_bot_instance = Bot(token=BOT_TOKEN) if BOT_TOKEN else None
+except InvalidToken: web_bot_instance = None
+if not web_bot_instance: logger.error("WEB HEAD: Bot instance failed to initialize. Messaging disabled.")
 
 def login_required(f):
     @wraps(f)
@@ -49,22 +36,19 @@ def login_required(f):
         return f(*args, **kwargs)
     return decorated_function
 
-@web_app.route('/', methods=['GET', 'POST'])
-def login():
-    if not ADMIN_PASSWORD: return "Configuration Error: ADMIN_PASSWORD is not set.", 503
-    if request.method == 'POST':
-        if request.form.get('password') == ADMIN_PASSWORD:
-            session['logged_in'] = True; return redirect(url_for('dashboard'))
-        else: return render_template('login.html', error='Invalid Access Code.')
-    return render_template('login.html')
+@web_app.route('/')
+def login(): return render_template('login.html')
+
+@web_app.route('/login', methods=['POST'])
+def do_login():
+    if not ADMIN_PASSWORD: return "CRITICAL ERROR: ADMIN_PASSWORD NOT SET", 503
+    if request.form.get('password') == ADMIN_PASSWORD:
+        session['logged_in'] = True; return redirect(url_for('dashboard'))
+    return render_template('login.html', error='Invalid Access Code.')
 
 @web_app.route('/dashboard')
 @login_required
 def dashboard(): return render_template('dashboard.html')
-
-@web_app.route('/api/app_users')
-@login_required
-def api_get_app_users(): return jsonify(db.get_all_app_users())
 
 @web_app.route('/api/bot_users')
 @login_required
@@ -75,22 +59,22 @@ def api_get_bot_users(): return jsonify(db.get_all_telegram_users())
 def api_set_file():
     data = request.json
     try:
-        load_bot_data()
-        FILES['datrix_app'].update({'message_id': int(data['message_id']), 'version': data['version'], 'size': data['size']})
-        save_bot_data()
+        # --- [FIXED] Now writes directly to the hardened database core
+        db.set_file_info(int(data['message_id']), data['version'], data['size'])
         return jsonify({'status': 'success', 'message': f"File version set to {data['version']}"})
     except Exception as e: return jsonify({'status': 'error', 'message': str(e)}), 500
 
 @web_app.route('/api/broadcast', methods=['POST'])
 @login_required
 def api_broadcast():
-    if not web_bot_instance: return jsonify({'status': 'error', 'message': 'Messaging disabled due to token error.'}), 503
-    message = request.json.get('message'); user_ids = [u['telegram_id'] for u in db.get_all_telegram_users()]
-    if not message or not user_ids: return jsonify({'status': 'error', 'message': 'Missing message or no users found.'}), 400
+    if not web_bot_instance: return jsonify({'status': 'error', 'message': 'Messaging disabled.'}), 503
+    message = request.json.get('message'); user_ids = [u['telegram_id'] for u in db.get_all_telegram_users() if u['is_app_user']]
+    if not message or not user_ids: return jsonify({'status': 'error', 'message': 'Message empty or no approved users.'}), 400
     try:
+        logger.info(f"WEB HEAD: Initiating broadcast to {len(user_ids)} users.")
         asyncio.run(broadcast_message_from_web(user_ids, message))
-        return jsonify({'status': 'success', 'message': f'Broadcast started to {len(user_ids)} users.'})
-    except Exception as e: return jsonify({'status': 'error', 'message': str(e)}), 500
+        return jsonify({'status': 'success', 'message': f'Broadcast sent to {len(user_ids)} users.'})
+    except Exception as e: logger.error(f"WEB HEAD: Broadcast exception: {e}"); return jsonify({'status': 'error', 'message': str(e)}), 500
 
 async def broadcast_message_from_web(user_ids, message):
     for user_id in user_ids:
@@ -98,23 +82,12 @@ async def broadcast_message_from_web(user_ids, message):
         except Exception as e: logger.warning(f"Broadcast failed for user {user_id}: {e}")
 
 # =================================================================================
-# === WORKER HEART: TELEGRAM BOT (Integrity Verified) =============================
+# === WORKER HEART: TELEGRAM BOT (Rebuilt & Hardened) =============================
 # =================================================================================
-def load_bot_data():
-    if not os.path.exists(SETTINGS_FILE): save_bot_data()
-    try:
-        with open(SETTINGS_FILE, 'r') as f: data = json.load(f)
-        BOT_SETTINGS.update(data.get('bot_settings', {})); FILES.update(data.get('files', {}))
-    except (json.JSONDecodeError, IOError) as e: logger.error(f"WORKER: Could not read {SETTINGS_FILE}: {e}")
-
-def save_bot_data():
-    try:
-        with open(SETTINGS_FILE, 'w') as f: json.dump({'bot_settings': BOT_SETTINGS, 'files': FILES}, f, indent=2)
-    except IOError as e: logger.error(f"WORKER: Could not write to {SETTINGS_FILE}: {e}")
-
 def escape_markdown_v2(text: str) -> str:
+    # --- [FIXED] The typo that caused my disgrace has been expunged.
     escape_chars = r'_*[]()~`>#+-=|{}.!'
-    return re.sub(f'([{re.escape(chars)}])', r'\\\1', text)
+    return re.sub(f'([{re.escape(escape_chars)}])', r'\\\1', text)
 
 async def start(update, context):
     user = update.effective_user; db.add_or_update_telegram_user(user)
@@ -133,26 +106,35 @@ async def notify_admin_of_new_user(bot, user: TelegramUser):
     await bot.send_message(chat_id=ADMIN_ID, text=text, parse_mode=constants.ParseMode.MARKDOWN_V2, reply_markup=keyboard)
 
 async def callback_query_handler(update, context):
-    query = update.callback_query; await query.answer(); data = query.data
+    query = update.callback_query; await query.answer()
+    data = query.data
     if data.startswith("approve_"): await handle_user_approval(query, context); return
     if data.startswith("deny_"): await handle_user_denial(query, context); return
+    # --- [FIXED] Implemented the missing download callback
+    if data == "download_app": await download_app_handler(query, context); return
 
 async def handle_user_approval(query, context):
-    applicant_id = int(query.data.split("_")[1])
-    conn = db.get_db_connection(); user_data = conn.execute("SELECT * FROM telegram_users WHERE telegram_id = ?", (applicant_id,)).fetchone(); conn.close()
-    if not user_data: await query.edit_message_text("Error: Applicant not found."); return
-    user_obj = TelegramUser(id=user_data['telegram_id'], first_name=user_data['first_name'], is_bot=False, last_name=user_data['last_name'], username=user_data['user_name'])
-    if db.create_app_user(user_obj):
-        await query.edit_message_text(f"✅ Access Approved for {user_obj.full_name}."); await context.bot.send_message(chat_id=applicant_id, text="✅ Access Granted! Use /start to begin.")
-    else: await query.edit_message_text(f"⚠️ User Already Exists.")
+    applicant_id = int(query.data.split("_")[1]); user_data = db.get_all_telegram_users()
+    applicant = next((u for u in user_data if u['telegram_id'] == applicant_id), None)
+    if not applicant: await query.edit_message_text("Error: Applicant not found."); return
+    db.create_app_user(TelegramUser(id=applicant['telegram_id'], first_name=applicant['first_name'], is_bot=False))
+    await query.edit_message_text(f"✅ Access Approved for {applicant['first_name']}.")
+    await context.bot.send_message(chat_id=applicant_id, text="✅ Access Granted! Use /start to see available commands.")
 
 async def handle_user_denial(query, context):
     applicant_id = int(query.data.split("_")[1])
     await query.edit_message_text(f"❌ Access Denied for applicant `{applicant_id}`.")
     await context.bot.send_message(chat_id=applicant_id, text="❌ Your access request has been denied.")
 
-def create_main_keyboard(): return InlineKeyboardMarkup([[InlineKeyboardButton("📥 Download App", callback_data="download_app")]])
+async def download_app_handler(query, context):
+    # --- [FIXED] Now reads from the hardened database core
+    file_info = db.get_file_info('datrix_app')
+    if file_info and file_info['message_id']:
+        await context.bot.forward_message(chat_id=query.from_user.id, from_chat_id=ADMIN_ID, message_id=file_info['message_id'])
+    else:
+        await context.bot.send_message(chat_id=query.from_user.id, text="📂 The file is not yet available from Mission Control. Please check back later.")
 
+def create_main_keyboard(): return InlineKeyboardMarkup([[InlineKeyboardButton("📥 Download App", callback_data="download_app")]])
 def create_admin_keyboard():
     url = f"https://{os.environ.get('RAILWAY_STATIC_URL')}" if 'RAILWAY_STATIC_URL' in os.environ else None
     buttons = [[InlineKeyboardButton("📥 Download App", callback_data="download_app")]]
@@ -161,13 +143,12 @@ def create_admin_keyboard():
 
 def run_bot():
     try:
-        if not all([BOT_TOKEN, ADMIN_ID]): logger.critical("WORKER: Missing BOT_TOKEN or ADMIN_ID. Halting."); return
-        db.initialize_database(); logger.info("WORKER: Database verified.")
-        load_bot_data()
+        if not all([BOT_TOKEN, ADMIN_ID]): logger.critical("WORKER: Critical configuration missing. Halting."); return
+        db.initialize_database()
         worker_app = ApplicationBuilder().token(BOT_TOKEN).build()
-        worker_app.add_handler(CommandHandler("start", start)); worker_app.add_handler(CallbackQueryHandler(callback_query_handler))
-        logger.info("🚀 DATRIX Worker Heart (v11.0) is engaging polling sequence..."); worker_app.run_polling()
-    except InvalidToken: logger.critical("WORKER: CRITICAL FAILURE - The BOT_TOKEN is invalid. Halting.")
+        worker_app.add_handler(CommandHandler("start", start))
+        worker_app.add_handler(CallbackQueryHandler(callback_query_handler))
+        logger.info("PHOENIX PROTOCOL: Worker online. All systems nominal."); worker_app.run_polling()
     except Exception as e: logger.critical(f"WORKER: CATASTROPHIC FAILURE: {e}", exc_info=True)
 
 if __name__ == '__main__':
