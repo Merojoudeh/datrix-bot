@@ -1,127 +1,151 @@
-<!-- templates/dashboard.html -->
-<!-- VERSION 6.0: Full Feature Restoration & Expansion -->
 <!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>DATRIX - Mission Control</title>
+    <title>Mission Control</title>
     <style>
-        /* CSS is unchanged from the last complete version. Omitted for brevity. */
-        :root { --bg-primary: #0f172a; --bg-secondary: #1e293b; --bg-card: #334155; --text-primary: #f8fafc; --text-secondary: #cbd5e1; --border-color: #475569; --accent-primary: #3b82f6; --accent-success: #10b981; --accent-danger: #ef4444; }
-        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: var(--bg-primary); color: var(--text-primary); margin: 0; }
-        .container { max-width: 1600px; margin: 0 auto; padding: 24px; }
-        h1, h2, h3 { color: var(--text-primary); }
-        .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px; }
-        .btn { padding: 10px 20px; border: none; border-radius: 8px; font-weight: 600; cursor: pointer; transition: background-color 0.2s; }
-        .btn-primary { background: var(--accent-primary); color: white; }
-        .table-container { background: var(--bg-secondary); border-radius: 12px; overflow-x: auto; border: 1px solid var(--border-color); margin-bottom: 32px; }
-        table { width: 100%; border-collapse: collapse; }
-        th, td { padding: 16px; text-align: left; border-bottom: 1px solid var(--border-color); }
-        .grid-container { display: grid; grid-template-columns: repeat(auto-fit, minmax(400px, 1fr)); gap: 2rem; margin-bottom: 2rem; }
-        .form-card { background-color: var(--bg-secondary); padding: 1.5rem; border-radius: 12px; border: 1px solid var(--border-color); }
-        .form-card h3 { margin-top: 0; }
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; background-color: #f8f9fa; color: #212529; margin: 0; padding: 2rem; }
+        .container { max-width: 960px; margin: auto; background: #fff; padding: 2rem; border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
+        h1, h2 { border-bottom: 2px solid #dee2e6; padding-bottom: 0.5rem; margin-top: 0; }
         .form-group { margin-bottom: 1rem; }
-        input, textarea { width: 100%; box-sizing: border-box; padding: 10px; background: var(--bg-primary); border: 1px solid var(--border-color); border-radius: 6px; color: var(--text-primary); }
-        .toast { /* ... */ }
-        /* Other styles are assumed to be present */
+        label { display: block; margin-bottom: 0.5rem; font-weight: bold; }
+        input[type="text"], input[type="number"], textarea { width: 100%; padding: 0.5rem; border: 1px solid #ced4da; border-radius: 4px; box-sizing: border-box; }
+        button { background-color: #007bff; color: white; padding: 0.6rem 1.2rem; border: none; border-radius: 4px; cursor: pointer; font-size: 1rem; }
+        button:hover { background-color: #0056b3; }
+        .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 2rem; }
+        #user-list { list-style-type: none; padding: 0; }
+        #user-list li { background: #e9ecef; padding: 0.5rem; border-radius: 4px; margin-bottom: 0.5rem; }
+        .status { margin-top: 1rem; padding: 1rem; border-radius: 4px; display: none; }
+        .status.success { background-color: #d4edda; color: #155724; }
+        .status.error { background-color: #f8d7da; color: #721c24; }
     </style>
 </head>
 <body>
     <div class="container">
-        <div class="header"><h1>🚀 DATRIX Mission Control</h1></div>
-        
-        <div class="grid-container">
-            <div class="form-card">
-                <h3>📢 Broadcast Message</h3>
-                <div class="form-group"><textarea id="broadcastMessage" rows="3" placeholder="Enter message for all bot subscribers..."></textarea></div>
-                <button class="btn btn-primary" onclick="broadcastMessage()">Send Broadcast</button>
-            </div>
-            <div class="form-card">
-                <h3>📦 Set App File ID</h3>
-                <div class="form-group"><input type="text" id="fileMessageId" placeholder="File Message ID from Channel"></div>
-                <div class="form-group"><input type="text" id="fileVersion" placeholder="App Version (e.g., v2.5.0)"></div>
-                <div class="form-group"><input type="text" id="fileSize" placeholder="File Size (e.g., 25.4 MB)"></div>
-                <button class="btn btn-primary" onclick="setFile()">Update File</button>
-            </div>
+        <h1>🚀 Mission Control</h1>
+        <div class="grid">
+            <section id="file-management">
+                <h2>File Management</h2>
+                <form id="file-form">
+                    <div class="form-group">
+                        <label for="message-id">File Message ID</label>
+                        <input type="number" id="message-id" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="version">Version</label>
+                        <input type="text" id="version" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="size">Size (e.g., 25.4 MB)</label>
+                        <input type="text" id="size" required>
+                    </div>
+                    <button type="submit">Set File</button>
+                </form>
+            </section>
+            <section id="broadcast">
+                <h2>Broadcast Message</h2>
+                <form id="broadcast-form">
+                    <div class="form-group">
+                        <label for="broadcast-message">Message</label>
+                        <textarea id="broadcast-message" rows="4" required></textarea>
+                    </div>
+                    <button type="submit">Send Broadcast</button>
+                </form>
+            </section>
         </div>
-
-        <h2>Licensed App Users</h2>
-        <div class="table-container">
-            <table>
-                <thead><tr><th>User</th><th>Company</th><th>License Status</th><th>Days Left</th><th>Last Seen</th><th>Telegram ID</th></tr></thead>
-                <tbody id="appUserTableBody"></tbody>
-            </table>
-        </div>
-
-        <h2>All Bot Subscribers</h2>
-        <div class="table-container">
-            <table>
-                <thead><tr><th>Name</th><th>Username</th><th>Last Seen</th><th>Telegram ID</th></tr></thead>
-                <tbody id="botUserTableBody"></tbody>
-            </table>
-        </div>
+        <div id="status-area" class="status"></div>
+        <section id="users">
+            <h2>Bot Users (<span id="user-count">0</span>)</h2>
+            <ul id="user-list"></ul>
+        </section>
     </div>
-    <div id="toast" class="toast"></div> <!-- Modal HTML is omitted for clarity but should be present -->
 
-<script>
-    // --- Utility Functions ---
-    function showToast(message, type = 'success') { /* ... unchanged ... */ }
-    async function apiCall(endpoint, options) {
-        try {
-            const response = await fetch(endpoint, options);
-            const result = await response.json();
-            if (!response.ok) throw new Error(result.message || 'API Error');
-            showToast(result.message, 'success');
-            return result;
-        } catch (error) {
-            showToast(error.message, 'error');
-            return null;
-        }
-    }
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            const fileForm = document.getElementById('file-form');
+            const broadcastForm = document.getElementById('broadcast-form');
+            const statusArea = document.getElementById('status-area');
+            const userList = document.getElementById('user-list');
+            const userCount = document.getElementById('user-count');
 
-    // --- Feature Functions ---
-    function broadcastMessage() {
-        const message = document.getElementById('broadcastMessage').value;
-        if (!message) { showToast('Message cannot be empty.', 'error'); return; }
-        apiCall('/api/broadcast', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ message }) });
-    }
-    function setFile() {
-        const message_id = document.getElementById('fileMessageId').value;
-        const version = document.getElementById('fileVersion').value;
-        const size = document.getElementById('fileSize').value;
-        if (!message_id || !version) { showToast('Message ID and Version are required.', 'error'); return; }
-        apiCall('/api/set_file', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ message_id, version, size }) });
-    }
+            // Function to display status messages
+            const showStatus = (message, isError = false) => {
+                statusArea.textContent = message;
+                statusArea.className = isError ? 'status error' : 'status success';
+                statusArea.style.display = 'block';
+                setTimeout(() => { statusArea.style.display = 'none'; }, 5000);
+            };
 
-    // --- Table Rendering ---
-    async function fetchAndRenderTables() {
-        fetch('/api/app_users').then(r => r.json()).then(renderAppUserTable);
-        fetch('/api/bot_users').then(r => r.json()).then(renderBotUserTable);
-    }
-    function renderAppUserTable(users) {
-        const tbody = document.getElementById('appUserTableBody');
-        tbody.innerHTML = '';
-        if (!users || users.length === 0) { tbody.innerHTML = '<tr><td colspan="6">No licensed users found.</td></tr>'; return; }
-        users.forEach(user => {
-            // Logic for status, days left, etc.
-            const tr = document.createElement('tr');
-            tr.innerHTML = `<td>${user.user_name}</td><td>${user.company_name}</td><td>${user.license_status}</td><td>...</td><td>${new Date(user.last_seen).toLocaleString()}</td><td>${user.telegram_id}</td>`;
-            tbody.appendChild(tr);
+            // Fetch and display users on page load
+            const fetchUsers = async () => {
+                try {
+                    const response = await fetch('/api/bot_users');
+                    if (!response.ok) throw new Error('Failed to fetch users.');
+                    const users = await response.json();
+                    
+                    userList.innerHTML = ''; // Clear current list
+                    users.forEach(user => {
+                        const li = document.createElement('li');
+                        const status = user.is_app_user ? '✅ Approved' : '⏳ Pending';
+                        li.textContent = `${user.first_name} (@${user.user_name || 'N/A'}) - ${status}`;
+                        userList.appendChild(li);
+                    });
+                    userCount.textContent = users.length;
+                } catch (error) {
+                    showStatus(error.message, true);
+                }
+            };
+
+            // Handle File Form Submission
+            fileForm.addEventListener('submit', async (e) => {
+                e.preventDefault();
+                const data = {
+                    message_id: document.getElementById('message-id').value,
+                    version: document.getElementById('version').value,
+                    size: document.getElementById('size').value,
+                };
+
+                try {
+                    const response = await fetch('/api/set_file', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(data)
+                    });
+                    const result = await response.json();
+                    if (!response.ok) throw new Error(result.message);
+                    showStatus(result.message);
+                    fileForm.reset();
+                } catch (error) {
+                    showStatus(error.message, true);
+                }
+            });
+
+            // Handle Broadcast Form Submission
+            broadcastForm.addEventListener('submit', async (e) => {
+                e.preventDefault();
+                const data = {
+                    message: document.getElementById('broadcast-message').value
+                };
+
+                try {
+                    const response = await fetch('/api/broadcast', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(data)
+                    });
+                    const result = await response.json();
+                    if (!response.ok) throw new Error(result.message);
+                    showStatus(result.message);
+                    broadcastForm.reset();
+                } catch (error) {
+                    showStatus(error.message, true);
+                }
+            });
+
+            // Initial fetch of users
+            fetchUsers();
         });
-    }
-    function renderBotUserTable(users) {
-        const tbody = document.getElementById('botUserTableBody');
-        tbody.innerHTML = '';
-        if (!users || users.length === 0) { tbody.innerHTML = '<tr><td colspan="4">No bot subscribers found.</td></tr>'; return; }
-        users.forEach(user => {
-            const tr = document.createElement('tr');
-            tr.innerHTML = `<td>${user.first_name} ${user.last_name || ''}</td><td>@${user.user_name}</td><td>${new Date(user.last_seen).toLocaleString()}</td><td>${user.telegram_id}</td>`;
-            tbody.appendChild(tr);
-        });
-    }
-
-    document.addEventListener('DOMContentLoaded', fetchAndRenderTables);
-</script>
+    </script>
 </body>
 </html>
