@@ -1,8 +1,8 @@
 # database.py
-# VERSION 5.1: The Compliance Directive
+# VERSION 5.2: The Phantom Protocol
 
 import psycopg2
-import psycopg2.extras  # <-- FORCED COMPLIANCE. This line is the entire fix.
+import psycopg2.extras
 import logging
 import os
 
@@ -11,7 +11,6 @@ logger = logging.getLogger(__name__)
 DATABASE_URL = os.environ.get('DATABASE_URL')
 
 def get_db_connection():
-    """Establishes a connection to the PostgreSQL database."""
     if not DATABASE_URL:
         logger.critical("DATABASE: DATABASE_URL is not set. The Citadel is unreachable.")
         raise ValueError("DATABASE_URL environment variable not set.")
@@ -23,7 +22,6 @@ def get_db_connection():
         raise
 
 def initialize_database():
-    """Initializes the database schema in PostgreSQL."""
     conn = get_db_connection()
     cursor = conn.cursor()
     cursor.execute('''
@@ -40,6 +38,7 @@ def initialize_database():
         CREATE TABLE IF NOT EXISTS bot_files (
             file_key TEXT PRIMARY KEY,
             message_id BIGINT,
+            from_chat_id BIGINT, -- <-- NEW COLUMN: The origin map coordinate
             version TEXT,
             size TEXT
         )
@@ -50,8 +49,37 @@ def initialize_database():
     conn.close()
     logger.info("DATABASE: Consciousness synchronized with the Citadel (PostgreSQL).")
 
+# This function is now modified to accept the new from_chat_id
+def set_file_info(message_id: int, from_chat_id: int, version: str, size: str, file_key='datrix_app'):
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute('''
+        UPDATE bot_files 
+        SET message_id = %s, from_chat_id = %s, version = %s, size = %s
+        WHERE file_key = %s
+    ''', (message_id, from_chat_id, version, size, file_key)) # <-- NEW DATA POINT
+    conn.commit()
+    cursor.close()
+    conn.close()
+    logger.info(f"DATABASE: File info updated in Citadel. Origin: {from_chat_id}, ID: {message_id}, Version: {version}")
+    return True
+
+# This function now correctly uses the from_chat_id
+async def download_app_handler(query, context):
+    file_info = get_file_info('datrix_app')
+    # Check for both message_id AND the new from_chat_id
+    if file_info and file_info['message_id'] and file_info['from_chat_id']:
+        await context.bot.forward_message(
+            chat_id=query.from_user.id,
+            from_chat_id=file_info['from_chat_id'], # <-- USE THE CORRECT MAP
+            message_id=file_info['message_id']
+        )
+    else:
+        await query.message.reply_text("📂 The file is not yet available from Mission Control. The Admin must upload it first.")
+
+# --- All other functions remain unchanged ---
+
 def add_or_update_telegram_user(user):
-    """Inserts or updates a user in the PostgreSQL database."""
     sql = '''
         INSERT INTO telegram_users (telegram_id, first_name, last_name, user_name)
         VALUES (%s, %s, %s, %s)
@@ -78,7 +106,6 @@ def create_app_user(user):
     conn.commit()
     cursor.close()
     conn.close()
-    logger.info(f"Successfully approved user for ID: {user.id}")
 
 def is_app_user(telegram_id):
     conn = get_db_connection()
@@ -91,7 +118,6 @@ def is_app_user(telegram_id):
 
 def get_all_telegram_users():
     conn = get_db_connection()
-    # This line will now succeed because we forced the import of psycopg2.extras
     cursor = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
     cursor.execute("SELECT telegram_id, first_name, user_name, is_app_user FROM telegram_users ORDER BY join_date DESC")
     users = [dict(row) for row in cursor.fetchall()]
@@ -107,17 +133,3 @@ def get_file_info(file_key='datrix_app'):
     cursor.close()
     conn.close()
     return dict(info) if info else None
-
-def set_file_info(message_id: int, version: str, size: str, file_key='datrix_app'):
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    cursor.execute('''
-        UPDATE bot_files 
-        SET message_id = %s, version = %s, size = %s
-        WHERE file_key = %s
-    ''', (message_id, version, size, file_key))
-    conn.commit()
-    cursor.close()
-    conn.close()
-    logger.info(f"DATABASE: File info updated in the Citadel. Version: {version}")
-    return True
