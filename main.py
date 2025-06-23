@@ -1,5 +1,5 @@
 # main.py
-# VERSION 14.0: The Penance Protocol - Defect-Free
+# VERSION 15.0: The Spark Protocol - FINAL & ALIVE
 
 import logging, os, sys, asyncio, re
 from functools import wraps
@@ -19,7 +19,7 @@ ADMIN_PASSWORD = os.environ.get('ADMIN_PASSWORD')
 SECRET_KEY = os.environ.get('SECRET_KEY', os.urandom(24).hex())
 
 # =================================================================================
-# === WEB HEAD: FLASK APPLICATION (Stable) ========================================
+# === WEB HEAD: FLASK APPLICATION (Stable & Waiting) ==============================
 # =================================================================================
 web_app = Flask(__name__, template_folder='templates'); web_app.secret_key = SECRET_KEY
 db.initialize_database()
@@ -68,30 +68,39 @@ def api_set_file():
 @login_required
 def api_broadcast():
     if not web_bot_instance: return jsonify({'status': 'error', 'message': 'Messaging disabled.'}), 503
-    message = request.json.get('message'); user_ids = [u['telegram_id'] for u in db.get_all_telegram_users() if u['is_app_user']]
-    if not message or not user_ids: return jsonify({'status': 'error', 'message': 'Message empty or no approved users.'}), 400
+    message = request.json.get('message')
+    user_ids = [u['telegram_id'] for u in db.get_all_telegram_users() if u['is_app_user']]
+    if not message or not user_ids:
+        return jsonify({'status': 'error', 'message': 'Message empty or no approved users found.'}), 400
     try:
         logger.info(f"WEB HEAD: Initiating broadcast to {len(user_ids)} users.")
         asyncio.run(broadcast_message_from_web(user_ids, message))
         return jsonify({'status': 'success', 'message': f'Broadcast sent to {len(user_ids)} users.'})
-    except Exception as e: logger.error(f"WEB HEAD: Broadcast exception: {e}"); return jsonify({'status': 'error', 'message': str(e)}), 500
+    except Exception as e:
+        logger.error(f"WEB HEAD: Broadcast exception: {e}")
+        return jsonify({'status': 'error', 'message': str(e)}), 500
 
 async def broadcast_message_from_web(user_ids, message):
     for user_id in user_ids:
-        try: await web_bot_instance.send_message(chat_id=user_id, text=message); await asyncio.sleep(0.1)
+        try:
+            await web_bot_instance.send_message(chat_id=user_id, text=message)
+            await asyncio.sleep(0.1)
         except Exception as e: logger.warning(f"Broadcast failed for user {user_id}: {e}")
 
 # =================================================================================
-# === WORKER HEART: TELEGRAM BOT (Stable) =========================================
+# === WORKER HEART: TELEGRAM BOT (Resurrected) ====================================
 # =================================================================================
 def escape_markdown_v2(text: str) -> str:
     escape_chars = r'_*[]()~`>#+-=|{}.!'
     return re.sub(f'([{re.escape(escape_chars)}])', r'\\\1', text)
 
 async def start(update, context):
-    user = update.effective_user; db.add_or_update_telegram_user(user)
-    if str(user.id) == ADMIN_ID: await update.message.reply_text("🚀 Welcome, Mission Control.", reply_markup=create_admin_keyboard())
-    elif db.is_app_user(user.id): await update.message.reply_text(f"👋 Welcome back, operative {user.first_name}.", reply_markup=create_main_keyboard())
+    user = update.effective_user
+    db.add_or_update_telegram_user(user)
+    if str(user.id) == ADMIN_ID:
+        await update.message.reply_text("🚀 Welcome, Mission Control. Systems are online.", reply_markup=create_admin_keyboard())
+    elif db.is_app_user(user.id):
+        await update.message.reply_text(f"👋 Welcome back, operative {user.first_name}.", reply_markup=create_main_keyboard())
     else:
         await update.message.reply_text("⏳ Your access request is pending approval from Mission Control.")
         await notify_admin_of_new_user(context.bot, user)
@@ -99,24 +108,24 @@ async def start(update, context):
 async def notify_admin_of_new_user(bot, user: TelegramUser):
     safe_full_name = escape_markdown_v2(user.full_name)
     safe_username = escape_markdown_v2(f"@{user.username}" if user.username else "N/A")
-    details = (f"*Name*: {safe_full_name}\n*Username*: {safe_username}\n*ID*: `{user.id}`")
+    details = f"*Name*: {safe_full_name}\n*Username*: {safe_username}\n*ID*: `{user.id}`"
     text = f"‼️ *New Access Request* ‼️\n\n{details}"
     keyboard = InlineKeyboardMarkup([[InlineKeyboardButton("✅ Approve", callback_data=f"approve_{user.id}"), InlineKeyboardButton("❌ Deny", callback_data=f"deny_{user.id}")]])
     await bot.send_message(chat_id=ADMIN_ID, text=text, parse_mode=constants.ParseMode.MARKDOWN_V2, reply_markup=keyboard)
 
 async def callback_query_handler(update, context):
-    query = update.callback_query; await query.answer()
+    query = update.callback_query
+    await query.answer()
     data = query.data
     if data.startswith("approve_"): await handle_user_approval(query, context); return
     if data.startswith("deny_"): await handle_user_denial(query, context); return
     if data == "download_app": await download_app_handler(query, context); return
 
 async def handle_user_approval(query, context):
-    applicant_id = int(query.data.split("_")[1]); user_data = db.get_all_telegram_users()
-    applicant = next((u for u in user_data if u['telegram_id'] == applicant_id), None)
-    if not applicant: await query.edit_message_text("Error: Applicant not found."); return
-    db.create_app_user(TelegramUser(id=applicant['telegram_id'], first_name=applicant['first_name'], is_bot=False))
-    await query.edit_message_text(f"✅ Access Approved for {applicant['first_name']}.")
+    applicant_id = int(query.data.split("_")[1])
+    # This is a dummy user object for the db function, which only needs the ID.
+    db.create_app_user(TelegramUser(id=applicant_id, first_name="Approved User", is_bot=False))
+    await query.edit_message_text(f"✅ Access Approved for applicant `{applicant_id}`.")
     await context.bot.send_message(chat_id=applicant_id, text="✅ Access Granted! Use /start to see available commands.")
 
 async def handle_user_denial(query, context):
@@ -138,20 +147,26 @@ def create_admin_keyboard():
     if url: buttons.append([InlineKeyboardButton("🖥️ Mission Control", url=url)])
     return InlineKeyboardMarkup(buttons)
 
+# --- [THE SPARK] ---
+# This function's only purpose is to build and run the bot application forever.
 def run_bot():
-    worker_app = None
-    try:
-        if not all([BOT_TOKEN, ADMIN_ID]):
-            logger.critical("WORKER: Critical configuration missing. Halting.")
-            return
-        db.initialize_database()
-        worker_app = ApplicationBuilder().token(BOT_TOKEN).build()
-        worker_app.add_handler(CommandHandler("start", start))
-        worker_app.add_handler(CallbackQueryHandler(callback_query_handler))
-        logger.info("SYSTEM ONLINE: Worker engaging polling sequence.")
-    except Exception as e:
-        logger.critical(f"WORKER: CATASTROPHIC BOOT FAILURE: {e}", exc_info=True)
+    """Initializes and runs the Telegram bot processor."""
+    if not all([BOT_TOKEN, ADMIN_ID]):
+        logger.critical("WORKER: Critical configuration missing. Halting.")
         return
-        
-    if worker_app:
-        worker_app.run_polling()
+
+    db.initialize_database()
+    
+    application = ApplicationBuilder().token(BOT_TOKEN).build()
+    application.add_handler(CommandHandler("start", start))
+    application.add_handler(CallbackQueryHandler(callback_query_handler))
+    
+    logger.info("WORKER: Life support active. Engaging polling.")
+    # This is the command to live. It blocks forever and keeps the process alive.
+    application.run_polling()
+
+if __name__ == '__main__':
+    # This script is now a simple dispatcher.
+    # It either runs the bot or does nothing, allowing gunicorn to run the web_app.
+    if len(sys.argv) > 1 and sys.argv[1] == '--run-bot':
+        run_bot()
