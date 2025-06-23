@@ -62,16 +62,27 @@ def api_set_file(): return jsonify({'status': 'error', 'message': 'This endpoint
 @web_app.route('/api/broadcast', methods=['POST'])
 @login_required
 def api_broadcast():
-    if not web_bot_instance: return jsonify({'status': 'error', 'message': 'Messaging disabled.'}), 503
-    message = request.json.get('message')
-    user_ids = [u['telegram_id'] for u in db.get_all_telegram_users() if u['is_app_user']]
-    if not message or not user_ids: return jsonify({'status': 'error', 'message': 'Message empty or no approved users found.'}), 400
+    if not web_bot_instance: 
+        return jsonify({'status': 'error', 'message': 'Messaging subsystem is offline.'}), 503
+
+    data = request.json
+    message = data.get('message')
+    target = data.get('target', 'approved') # Defaults to 'approved' for safety
+
+    if not message:
+        return jsonify({'status': 'error', 'message': 'Cannot transmit an empty message.'}), 400
+
+    user_ids = db.get_user_ids_for_broadcast(target)
+    
+    if not user_ids:
+        return jsonify({'status': 'error', 'message': 'No users found for the selected target audience.'}), 404
+
     try:
-        logger.info(f"WEB HEAD: Initiating broadcast to {len(user_ids)} users.")
+        logger.info(f"WEB HEAD: Initiating broadcast to {len(user_ids)} users (Target: {target}).")
         asyncio.run(broadcast_message_from_web(user_ids, message))
-        return jsonify({'status': 'success', 'message': f'Broadcast sent to {len(user_ids)} users.'})
+        return jsonify({'status': 'success', 'message': f'Transmission sent to {len(user_ids)} users.'})
     except Exception as e:
-        logger.error(f"WEB HEAD: Broadcast exception: {e}")
+        logger.error(f"WEB HEAD: Broadcast exception: {e}", exc_info=True)
         return jsonify({'status': 'error', 'message': str(e)}), 500
 
 async def broadcast_message_from_web(user_ids, message):
@@ -138,11 +149,8 @@ async def callback_query_handler(update, context):
     if data == "download_app": await db.download_app_handler(query, context); return
 
 async def handle_user_approval(query, context):
-    # ... (this function is unchanged)
     applicant_id = int(query.data.split("_")[1])
-    # We need to fetch the full user object to register them properly
-    applicant_user = db.get_telegram_user_by_id(applicant_id) # You'll need to create this helper
-    db.create_app_user(applicant_user)
+    db.create_app_user(applicant_id) # Simplified call
     await query.edit_message_text(f"✅ Access Approved for applicant `{applicant_id}`.")
     await context.bot.send_message(chat_id=applicant_id, text="✅ Access Granted! Use /start to see available commands.")
 
