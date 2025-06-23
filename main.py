@@ -1,64 +1,179 @@
 # main.py
-# VERSION 17.0: The Phantom Protocol
+# VERSION 17.2: The Conduit Protocol
 
-import logging, os, sys, asyncio, re
+import os
+import logging
+import asyncio
+import threading
+from flask import Flask, render_template, request, jsonify, redirect, url_for
 from functools import wraps
+from telegram import Update, ReplyKeyboardMarkup, KeyboardButton, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes, CallbackQueryHandler
 import database as db
-from flask import Flask, jsonify, render_template, request, redirect, url_for, session
-from telegram import Bot, InlineKeyboardButton, InlineKeyboardMarkup, constants, User as TelegramUser
-from telegram.ext import Application, CommandHandler, CallbackQueryHandler, MessageHandler, filters, ApplicationBuilder
-from telegram.error import InvalidToken
 
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-logger = logging.getLogger(__name__)
+# --- Logging Configuration ---
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger("main")
 
-# --- Configuration (Verified) ---
-BOT_TOKEN = os.environ.get('BOT_TOKEN')
-ADMIN_ID = os.environ.get('ADMIN_ID')
-ADMIN_PASSWORD = os.environ.get('ADMIN_PASSWORD')
-SECRET_KEY = os.environ.get('SECRET_KEY', os.urandom(24).hex())
+# --- Environment Variables ---
+TELEGRAM_BOT_TOKEN = os.environ.get('TELEGRAM_BOT_TOKEN')
+ADMIN_TELEGRAM_ID = int(os.environ.get('ADMIN_TELEGRAM_ID', 0))
+WEB_USER = os.environ.get('WEB_USER')
+WEB_PASS = os.environ.get('WEB_PASS')
 
-# =================================================================================
-# === WEB HEAD: FLASK APPLICATION (Stable) ========================================
-# =================================================================================
-web_app = Flask(__name__, template_folder='templates'); web_app.secret_key = SECRET_KEY
-db.initialize_database()
+# --- Global Bot Instance ---
+web_bot_instance = None
 
-# --- Web Head functions remain unchanged ---
-try:
-    web_bot_instance = Bot(token=BOT_TOKEN) if BOT_TOKEN else None
-except InvalidToken: web_bot_instance = None
-if not web_bot_instance: logger.error("WEB HEAD: Bot instance failed to initialize. Messaging disabled.")
+# --- Bot Command Handlers ---
+async def start_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user = update.effective_user
+    db.add_or_update_telegram_user(user)
+
+    if db.is_app_user(user.id):
+        keyboard = [
+            [KeyboardButton("Download App")],
+            [KeyboardButton("Request License")]
+        ]
+        reply_markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
+        await update.message.reply_text("Welcome, authorized operative. Select a command.", reply_markup=reply_markup)
+    else:
+        await update.message.reply_text("Welcome. Your access is pending approval from Mission Control.")
+
+async def file_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+    if user_id != ADMIN_TELEGRAM_ID:
+        return
+
+    if update.message.document:
+        doc = update.message.document
+        file_size_mb = f"{doc.file_size / 1024 / 1024:.2f} MB"
+        db.set_file_info(
+            message_id=update.message.message_id,
+            from_chat_id=update.message.chat_id,
+            version="1.0", # Placeholder version
+            size=file_size_mb
+        )
+        await update.message.reply_text(f"✅ New application file received and registered in the Citadel. Size: {file_size_mb}")
+
+async def text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+    text = update.message.text
+
+    if text == "Download App":
+        if db.is_app_user(user_id):
+            file_info = db.get_file_info('datrix_app')
+            if file_info and file_info.get('message_id') and file_info.get('from_chat_id'):
+                await context.bot.forward_message(
+                    chat_id=user_id,
+                    from_chat_id=file_info['from_chat_id'],
+                    message_id=file_info['message_id']
+                )
+            else:
+                await update.message.reply_text("📂 File not yet available. Admin must upload it.")
+        else:
+            await update.message.reply_text("Access denied. Your request is pending approval.")
+    elif text == "Request License":
+        if db.is_app_user(user_id):
+            keyboard = [[InlineKeyboardButton("Confirm License Request", callback_data=f"req_license_{user_id}")]]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            await update.message.reply_text(f"This will send a license request to the admin for user `{user_id}`. Please confirm.", reply_markup=reply_markup)
+        else:
+            await update.message.reply_text("Access denied. Your request is pending approval.")
+    else:
+        if not db.is_app_user(user_id):
+            keyboard = [[InlineKeyboardButton("Request Access", callback_data=f"req_access_{user_id}")]]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            await update.message.reply_text("Your access is pending. Would you like to notify the admin?", reply_markup=reply_markup)
+
+async def handle_access_request(query, context):
+    applicant_id = int(query.data.split("_")[2])
+    user = db.get_telegram_user_by_id(applicant_id)
+    if not user:
+        await query.answer("Error: Could not find user.", show_alert=True)
+        return
+
+    keyboard = [[InlineKeyboardButton(f"Approve Access for {user.first_name}", callback_data=f"approve_{applicant_id}")]]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    await context.bot.send_message(
+        chat_id=ADMIN_TELEGRAM_ID,
+        text=f"❗️ New access request from:\nID: `{user.telegram_id}`\nName: {user.first_name}\nUsername: @{user.user_name}",
+        reply_markup=reply_markup
+    )
+    await query.edit_message_text("✅ Admin has been notified of your request.")
+
+async def handle_user_approval(query, context):
+    applicant_id = int(query.data.split("_")[1])
+    db.create_app_user(applicant_id)
+    await query.edit_message_text(f"✅ Access Approved for applicant `{applicant_id}`.")
+    await context.bot.send_message(chat_id=applicant_id, text="✅ Access Granted! Use /start to see available commands.")
+
+async def handle_license_request(query, context):
+    applicant_id = int(query.data.split("_")[2])
+    user = db.get_telegram_user_by_id(applicant_id)
+    if not user:
+        await query.answer("Error: Could not find user.", show_alert=True)
+        return
+
+    await context.bot.send_message(
+        chat_id=ADMIN_TELEGRAM_ID,
+        text=f"🔑 New license request from:\nID: `{user.telegram_id}`\nName: {user.first_name}\nUsername: @{user.user_name}"
+    )
+    await query.edit_message_text("✅ Your license request has been sent to the admin.")
+
+async def callback_query_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    data = query.data
+
+    if data.startswith("req_access_"):
+        await handle_access_request(query, context)
+    elif data.startswith("approve_"):
+        await handle_user_approval(query, context)
+    elif data.startswith("req_license_"):
+        await handle_license_request(query, context)
+
+# --- Web Application (Flask) ---
+web_app = Flask(__name__)
+
+def check_auth(username, password):
+    return username == WEB_USER and password == WEB_PASS
 
 def login_required(f):
     @wraps(f)
     def decorated_function(*args, **kwargs):
-        if 'logged_in' not in session: return redirect(url_for('login'))
+        auth = request.authorization
+        if not auth or not check_auth(auth.username, auth.password):
+            return ('Unauthorized', 401, {'WWW-Authenticate': 'Basic realm="Login Required"'})
         return f(*args, **kwargs)
     return decorated_function
 
-@web_app.route('/', methods=['GET', 'POST'])
-def login():
-    if request.method == 'POST':
-        if not ADMIN_PASSWORD: return "CRITICAL ERROR: ADMIN_PASSWORD NOT SET", 503
-        if request.form.get('password') == ADMIN_PASSWORD:
-            session['logged_in'] = True
-            return redirect(url_for('dashboard'))
-        else: return render_template('login.html', error='Invalid Access Code.')
-    return render_template('login.html')
-
-@web_app.route('/dashboard')
+@web_app.route('/')
 @login_required
-def dashboard(): return render_template('dashboard.html')
+def dashboard():
+    return render_template('dashboard.html')
 
 @web_app.route('/api/bot_users')
 @login_required
-def api_get_bot_users(): return jsonify(db.get_all_telegram_users())
+def api_bot_users():
+    users = db.get_all_telegram_users()
+    return jsonify(users)
 
-@web_app.route('/api/set_file', methods=['POST'])
-@login_required
-def api_set_file(): return jsonify({'status': 'error', 'message': 'This endpoint is deprecated.'}), 410
+# --- THE CONDUIT ---
+# This coroutine contains the actual logic for sending messages.
+async def broadcast_message_from_web(user_ids, message):
+    bot = web_bot_instance.bot
+    for user_id in user_ids:
+        try:
+            await bot.send_message(chat_id=user_id, text=message)
+            logger.info(f"Broadcast message sent to {user_id}")
+            await asyncio.sleep(0.1) # Rate limiting to avoid flooding
+        except Exception as e:
+            logger.warning(f"Broadcast failed for user {user_id}: {e}")
 
+# This is the Flask endpoint, which is synchronous.
 @web_app.route('/api/broadcast', methods=['POST'])
 @login_required
 def api_broadcast():
@@ -67,7 +182,7 @@ def api_broadcast():
 
     data = request.json
     message = data.get('message')
-    target = data.get('target', 'approved') # Defaults to 'approved' for safety
+    target = data.get('target', 'approved')
 
     if not message:
         return jsonify({'status': 'error', 'message': 'Cannot transmit an empty message.'}), 400
@@ -79,107 +194,51 @@ def api_broadcast():
 
     try:
         logger.info(f"WEB HEAD: Initiating broadcast to {len(user_ids)} users (Target: {target}).")
-        asyncio.run(broadcast_message_from_web(user_ids, message))
+        
+        # This is the CONDUIT. It safely submits the async task to the bot's running event loop
+        # from our synchronous Flask thread.
+        coro = broadcast_message_from_web(user_ids, message)
+        future = asyncio.run_coroutine_threadsafe(coro, web_bot_instance.loop)
+        
+        # We can optionally wait for the result to ensure the broadcast completes before responding.
+        future.result(timeout=30) # Timeout after 30 seconds
+
         return jsonify({'status': 'success', 'message': f'Transmission sent to {len(user_ids)} users.'})
     except Exception as e:
         logger.error(f"WEB HEAD: Broadcast exception: {e}", exc_info=True)
-        return jsonify({'status': 'error', 'message': str(e)}), 500
+        return jsonify({'status': 'error', 'message': f'An error occurred: {str(e)}'}), 500
 
-async def broadcast_message_from_web(user_ids, message):
-    for user_id in user_ids:
-        try:
-            await web_bot_instance.send_message(chat_id=user_id, text=message)
-            await asyncio.sleep(0.1)
-        except Exception as e: logger.warning(f"Broadcast failed for user {user_id}: {e}")
+# --- System Startup ---
+def run_flask_app():
+    web_app.run(host='0.0.0.0', port=8080)
 
-# =================================================================================
-# === WORKER HEART: TELEGRAM BOT (Upgraded) =======================================
-# =================================================================================
-def escape_markdown_v2(text: str) -> str:
-    escape_chars = r'_*[]()~`>#+-=|{}.!'
-    return re.sub(f'([{re.escape(escape_chars)}])', r'\\\1', text)
-
-async def start(update, context):
-    user = update.effective_user
-    db.add_or_update_telegram_user(user)
-    if str(user.id) == ADMIN_ID:
-        await update.message.reply_text("🚀 Welcome, Mission Control. Systems online. Send the application file directly to me to register it.", reply_markup=create_admin_keyboard())
-    elif db.is_app_user(user.id):
-        await update.message.reply_text(f"👋 Welcome back, operative {user.first_name}.", reply_markup=create_main_keyboard())
-    else:
-        await update.message.reply_text("⏳ Your access request is pending approval from Mission Control.")
-        await notify_admin_of_new_user(context.bot, user)
-
-# --- NEW SENSOR: This function handles file uploads from the Admin ---
-async def file_handler(update, context):
-    user = update.effective_user
-    if str(user.id) != ADMIN_ID:
-        await update.message.reply_text("Unauthorized file upload detected. This incident will be logged.")
+def main():
+    if not all([TELEGRAM_BOT_TOKEN, ADMIN_TELEGRAM_ID, WEB_USER, WEB_PASS]):
+        logger.critical("FATAL: Missing one or more critical environment variables. Shutting down.")
         return
 
-    doc = update.message.document
-    if not doc: return
-
-    # Capture all necessary coordinates
-    message_id = update.message.message_id
-    from_chat_id = update.message.chat_id
-    version = doc.file_name # Or derive from text caption if you prefer
-    size_mb = round(doc.file_size / (1024 * 1024), 2)
-    size_str = f"{size_mb} MB"
-
-    db.set_file_info(message_id, from_chat_id, version, size_str)
-    await update.message.reply_text(f"✅ File registered in Citadel.\n- Version: {version}\n- Size: {size_str}")
-
-async def notify_admin_of_new_user(bot, user: TelegramUser):
-    # ... (this function is unchanged)
-    safe_full_name = escape_markdown_v2(user.full_name)
-    safe_username = escape_markdown_v2(f"@{user.username}" if user.username else "N/A")
-    details = f"*Name*: {safe_full_name}\n*Username*: {safe_username}\n*ID*: `{user.id}`"
-    text = f"‼️ *New Access Request* ‼️\n\n{details}"
-    keyboard = InlineKeyboardMarkup([[InlineKeyboardButton("✅ Approve", callback_data=f"approve_{user.id}"), InlineKeyboardButton("❌ Deny", callback_data=f"deny_{user.id}")]])
-    await bot.send_message(chat_id=ADMIN_ID, text=text, parse_mode=constants.ParseMode.MARKDOWN_V2, reply_markup=keyboard)
-
-async def callback_query_handler(update, context):
-    query = update.callback_query
-    await query.answer()
-    data = query.data
-    if data.startswith("approve_"): await handle_user_approval(query, context); return
-    if data.startswith("deny_"): await handle_user_denial(query, context); return
-    # The download logic is now handled by the database module
-    if data == "download_app": await db.download_app_handler(query, context); return
-
-async def handle_user_approval(query, context):
-    applicant_id = int(query.data.split("_")[1])
-    db.create_app_user(applicant_id) # Simplified call
-    await query.edit_message_text(f"✅ Access Approved for applicant `{applicant_id}`.")
-    await context.bot.send_message(chat_id=applicant_id, text="✅ Access Granted! Use /start to see available commands.")
-
-async def handle_user_denial(query, context):
-    # ... (this function is unchanged)
-    applicant_id = int(query.data.split("_")[1])
-    await query.edit_message_text(f"❌ Access Denied for applicant `{applicant_id}`.")
-    await context.bot.send_message(chat_id=applicant_id, text="❌ Your access request has been denied.")
-
-def create_main_keyboard(): return InlineKeyboardMarkup([[InlineKeyboardButton("📥 Download App", callback_data="download_app")]])
-def create_admin_keyboard():
-    url = f"https://{os.environ.get('RAILWAY_STATIC_URL')}" if 'RAILWAY_STATIC_URL' in os.environ else None
-    buttons = [[InlineKeyboardButton("📥 Download App", callback_data="download_app")]]
-    if url: buttons.append([InlineKeyboardButton("🖥️ Mission Control", url=url)])
-    return InlineKeyboardMarkup(buttons)
-
-def run_bot():
-    if not all([BOT_TOKEN, ADMIN_ID]):
-        logger.critical("WORKER: Critical configuration missing. Halting.")
-        return
     db.initialize_database()
-    application = ApplicationBuilder().token(BOT_TOKEN).build()
-    application.add_handler(CommandHandler("start", start))
-    application.add_handler(CallbackQueryHandler(callback_query_handler))
-    # --- ADD THE NEW SENSOR ---
-    application.add_handler(MessageHandler(filters.Document.ALL & filters.User(user_id=int(ADMIN_ID)), file_handler))
-    logger.info("WORKER: Life support active. Engaging polling.")
-    application.run_polling()
+
+    # Bot setup
+    global web_bot_instance
+    builder = Application.builder().token(TELEGRAM_BOT_TOKEN)
+    web_bot_instance = builder.build()
+    web_bot_instance.loop = asyncio.get_event_loop()
+
+    web_bot_instance.add_handler(CommandHandler("start", start_handler))
+    web_bot_instance.add_handler(MessageHandler(filters.Document.ALL, file_handler))
+    web_bot_instance.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, text_handler))
+    web_bot_instance.add_handler(CallbackQueryHandler(callback_query_handler))
+
+    # Start Flask in a separate thread
+    flask_thread = threading.Thread(target=run_flask_app)
+    flask_thread.daemon = True
+    flask_thread.start()
+    logger.info("WEB HEAD: Online and awaiting commands.")
+
+    # Start bot polling
+    logger.info("BOT: Consciousness active. Awaiting transmissions.")
+    web_bot_instance.run_polling()
 
 if __name__ == '__main__':
-    if len(sys.argv) > 1 and sys.argv[1] == '--run-bot':
-        run_bot()
+    main()
