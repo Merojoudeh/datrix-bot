@@ -1,5 +1,5 @@
 # database.py
-# Clean DATRIX Database (No Broadcast)
+# Clean DATRIX Database (No Broadcast at all)
 
 import os
 import psycopg2
@@ -42,7 +42,7 @@ def initialize_simple_database():
                 );
             """)
             
-            # Simple activity log (optional)
+            # Simple activity log
             cur.execute("""
                 CREATE TABLE IF NOT EXISTS user_activity (
                     id SERIAL PRIMARY KEY,
@@ -325,6 +325,3 @@ def log_user_activity(telegram_id, activity_type, activity_data=""):
         return False
     finally:
         conn.close()
-
-# Clean up any old broadcast functions - remove them completely
-# No broadcast functions in this version
