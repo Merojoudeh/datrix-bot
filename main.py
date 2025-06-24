@@ -1,5 +1,5 @@
 # main.py
-# DATRIX Bot + Web Dashboard (مع تعطيل البرودكاست مؤقتاً)
+# Clean DATRIX Bot + Web Dashboard (No Broadcast)
 
 import os
 import logging
@@ -26,7 +26,6 @@ logger = logging.getLogger(__name__)
 # Configuration
 BOT_TOKEN = os.environ.get('TELEGRAM_BOT_TOKEN', '7803291138:AAExEBQq9uZhq6X_ncI_c8E2J80-tpZtq8E')
 ADMIN_CHAT_ID = os.environ.get('ADMIN_TELEGRAM_ID', '811896458')
-STORAGE_CHANNEL_ID = os.environ.get('STORAGE_CHANNEL_ID', '-1002807912676')
 WEB_USER = os.environ.get('WEB_USER', 'admin')
 WEB_PASS = os.environ.get('WEB_PASS', 'datrix2024')
 
@@ -63,7 +62,7 @@ def dashboard():
 @login_required
 def api_datrix_users():
     try:
-        users = db.get_all_datrix_users()  # Function نحتاج نعملها
+        users = db.get_all_datrix_users()
         
         for user in users:
             if user.get('last_seen'):
@@ -82,7 +81,7 @@ def api_datrix_users():
         return jsonify(users)
     except Exception as e:
         logger.error(f"Error getting users: {e}")
-        return jsonify([])  # Return empty list instead of error
+        return jsonify([])
 
 @web_app.route('/api/extend_license', methods=['POST'])
 @login_required
@@ -95,7 +94,7 @@ def api_extend_license():
         if not user_id:
             return jsonify({'error': 'User ID required'}), 400
             
-        success = db.extend_user_license(user_id, days)  # Function بسيطة
+        success = db.extend_user_license(user_id, days)
         
         if success:
             return jsonify({
@@ -119,15 +118,22 @@ def api_file_info():
 def api_bot_stats():
     """Get basic bot statistics"""
     try:
-        stats = db.get_basic_stats()  # Function بسيطة
+        stats = db.get_basic_stats()
         return jsonify(stats)
     except Exception as e:
         logger.error(f"Error getting stats: {e}")
         return jsonify({
             'total_users': 0,
             'active_users': 0,
-            'downloads_today': 0
+            'downloads_today': 0,
+            'licensed_users': 0
         })
+
+# Original compatibility routes (empty implementations)
+@web_app.route('/api/bot_users')
+@login_required
+def api_bot_users(): 
+    return api_datrix_users()
 
 # =================== TELEGRAM BOT ===================
 
@@ -135,7 +141,8 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     
     # Register user
-    db.add_or_update_user(user.id, user.username or user.first_name)
+    db.add_or_update_user(user.id, user.username, user.first_name)
+    db.log_user_activity(user.id, 'start', 'User started bot')
     
     welcome_message = """🤖 **مرحباً بك في DATRIX Bot**
 
@@ -147,7 +154,9 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 • `/help` - المساعدة
 
 🌐 **يعمل 24/7 على الخادم السحابي**
-⚡ **تحميل فوري مباشرة من البوت**"""
+⚡ **تحميل فوري مباشرة من البوت**
+
+💡 **للبدء:** استخدم `/register_company` لتسجيل شركتك"""
     
     await update.message.reply_text(welcome_message, parse_mode='Markdown')
     logger.info(f"✅ User {user.id} started the bot")
@@ -158,20 +167,39 @@ async def register_company(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if len(context.args) < 2:
         await update.message.reply_text(
             "📝 **استخدام الأمر:**\n"
-            "`/register_company [اسم الشركة] [Google Sheet ID]`\n\n"
+            "`/register_company \"اسم الشركة\" google_sheet_id`\n\n"
             "**مثال:**\n"
             "`/register_company \"شركة المستقبل\" 1OTNGDMgnVdkhqN9t2ESvuXA`",
             parse_mode='Markdown'
         )
         return
     
-    company_name = context.args[0]
-    sheet_id = context.args[1]
+    # Parse company name (may have quotes)
+    args_text = ' '.join(context.args)
+    if args_text.startswith('"'):
+        # Extract quoted company name
+        end_quote = args_text.find('"', 1)
+        if end_quote != -1:
+            company_name = args_text[1:end_quote]
+            remaining = args_text[end_quote+1:].strip()
+            sheet_id = remaining.split()[0] if remaining.split() else None
+        else:
+            company_name = context.args[0]
+            sheet_id = context.args[1] if len(context.args) > 1 else None
+    else:
+        company_name = context.args[0]
+        sheet_id = context.args[1] if len(context.args) > 1 else None
+    
+    if not sheet_id:
+        await update.message.reply_text("❌ **يرجى إدخال Google Sheet ID**", parse_mode='Markdown')
+        return
     
     # Update user info
     success = db.update_user_company(user.id, company_name, sheet_id)
     
     if success:
+        db.log_user_activity(user.id, 'register_company', f'{company_name} - {sheet_id}')
+        
         await update.message.reply_text(
             f"✅ **تم تسجيل بيانات الشركة!**\n\n"
             f"🏢 **الشركة:** {company_name}\n"
@@ -185,7 +213,8 @@ async def register_company(update: Update, context: ContextTypes.DEFAULT_TYPE):
 👤 {user.first_name} (@{user.username})
 🆔 `{user.id}`
 🏢 {company_name}
-📊 `{sheet_id}`"""
+📊 `{sheet_id}`
+📅 {datetime.now().strftime('%Y-%m-%d %H:%M')}"""
         
         try:
             await context.bot.send_message(ADMIN_CHAT_ID, admin_msg, parse_mode='Markdown')
@@ -201,10 +230,12 @@ async def request_license(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not user_info or not user_info.get('company_name'):
         await update.message.reply_text(
             "❌ **يجب تسجيل بيانات الشركة أولاً**\n\n"
-            "استخدم: `/register_company [اسم الشركة] [Sheet ID]`",
+            "استخدم: `/register_company \"اسم الشركة\" sheet_id`",
             parse_mode='Markdown'
         )
         return
+    
+    db.log_user_activity(user.id, 'request_license', f"Company: {user_info['company_name']}")
     
     # Create admin keyboard
     keyboard = [
@@ -219,16 +250,19 @@ async def request_license(update: Update, context: ContextTypes.DEFAULT_TYPE):
     ]
     markup = InlineKeyboardMarkup(keyboard)
     
-    admin_msg = f"""🔑 **طلب تمديد ترخيص**
-👤 {user.first_name} (@{user.username})
-🆔 `{user.id}`
-🏢 {user_info['company_name']}
-📊 `{user_info.get('google_sheet_id', 'غير محدد')}`
-📅 {datetime.now().strftime('%Y-%m-%d %H:%M')}"""
+    admin_msg = f"""🔑 **طلب تمديد ترخيص DATRIX**
+
+👤 **المستخدم:** {user.first_name} (@{user.username})
+🆔 **Telegram ID:** `{user.id}`
+🏢 **الشركة:** {user_info['company_name']}
+📊 **Sheet ID:** `{user_info.get('google_sheet_id', 'غير محدد')}`
+📅 **تاريخ الطلب:** {datetime.now().strftime('%Y-%m-%d %H:%M')}
+
+⏰ **يرجى اختيار فترة التمديد:**"""
     
     try:
         await context.bot.send_message(ADMIN_CHAT_ID, admin_msg, reply_markup=markup, parse_mode='Markdown')
-        await update.message.reply_text("✅ **تم إرسال طلب التمديد للمراجعة**", parse_mode='Markdown')
+        await update.message.reply_text("✅ **تم إرسال طلب التمديد للمراجعة**\n\n📧 سيتم إشعارك فور الموافقة", parse_mode='Markdown')
     except Exception as e:
         logger.error(f"Failed to send license request: {e}")
         await update.message.reply_text("❌ حدث خطأ في إرسال الطلب")
@@ -248,7 +282,7 @@ async def callback_query_handler(update: Update, context: ContextTypes.DEFAULT_T
         if action == "extend_deny":
             await query.edit_message_text(f"❌ **تم رفض طلب الترخيص للمستخدم {user_id}**")
             try:
-                await context.bot.send_message(user_id, "❌ **تم رفض طلب تمديد الترخيص**")
+                await context.bot.send_message(user_id, "❌ **تم رفض طلب تمديد الترخيص**\n\nيرجى التواصل مع الإدارة للمزيد من المعلومات.")
             except:
                 pass
         else:
@@ -258,11 +292,15 @@ async def callback_query_handler(update: Update, context: ContextTypes.DEFAULT_T
             success = db.extend_user_license(user_id, days)
             
             if success:
-                await query.edit_message_text(f"✅ **تم منح ترخيص {days} يوم للمستخدم {user_id}**")
+                expiry_date = (datetime.now().date() + timedelta(days=days)).strftime('%Y-%m-%d')
+                await query.edit_message_text(f"✅ **تم منح ترخيص {days} يوم للمستخدم {user_id}**\n📅 **ينتهي في:** {expiry_date}")
                 try:
                     await context.bot.send_message(
                         user_id,
-                        f"🎉 **تم قبول طلب الترخيص!**\n⏰ **المدة:** {days} يوم\n\n✅ يمكنك الآن تحميل DATRIX!",
+                        f"🎉 **تم قبول طلب الترخيص!**\n\n"
+                        f"⏰ **المدة الممنوحة:** {days} يوم\n"
+                        f"📅 **ينتهي في:** {expiry_date}\n\n"
+                        f"✅ يمكنك الآن تحميل DATRIX باستخدام `/datrix_app`",
                         parse_mode='Markdown'
                     )
                 except:
@@ -285,22 +323,30 @@ async def my_status(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if days_remaining > 0:
             license_text = f"✅ نشط ({days_remaining} يوم متبقي)"
         else:
-            license_text = f"❌ منتهي الصلاحية"
+            license_text = f"❌ منتهي الصلاحية ({abs(days_remaining)} يوم)"
     
-    status_msg = f"""📊 **حالة حسابك**
-👤 {user.first_name}
-🆔 `{user.id}`
-🏢 {user_info.get('company_name') or 'غير مسجل'}
-📊 `{user_info.get('google_sheet_id') or 'غير محدد'}`
-🔑 **الترخيص:** {license_text}
-📅 **التسجيل:** {user_info.get('created_at', 'غير محدد')}"""
+    status_msg = f"""📊 **حالة حسابك في DATRIX**
+
+👤 **المستخدم:** {user.first_name}
+🆔 **Telegram ID:** `{user.id}`
+🏢 **الشركة:** {user_info.get('company_name') or 'غير مسجل'}
+📊 **Sheet ID:** `{user_info.get('google_sheet_id') or 'غير محدد'}`
+
+🔑 **حالة الترخيص:** {license_text}
+📅 **تاريخ انتهاء الترخيص:** {user_info['license_expires'].strftime('%Y-%m-%d') if user_info.get('license_expires') else 'غير محدد'}
+📦 **عدد التحميلات:** {user_info.get('download_count', 0)}
+📅 **تاريخ التسجيل:** {user_info['created_at'].strftime('%Y-%m-%d') if user_info.get('created_at') else 'غير محدد'}
+
+💡 **إجراءات متاحة:**
+• `/request_license` - طلب تمديد الترخيص
+• `/datrix_app` - تحميل التطبيق (إذا كان الترخيص نشط)"""
     
     await update.message.reply_text(status_msg, parse_mode='Markdown')
 
 async def get_datrix_app(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     
-    # Check if user has valid license
+    # Check if user exists
     user_info = db.get_user_info(user.id)
     if not user_info:
         await update.message.reply_text("❌ **يجب التسجيل أولاً**\nاستخدم `/start`", parse_mode='Markdown')
@@ -310,20 +356,20 @@ async def get_datrix_app(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if user_info.get('license_expires'):
         if user_info['license_expires'] <= datetime.now().date():
             await update.message.reply_text(
-                "🔒 **الترخيص منتهي الصلاحية**\n\nاستخدم `/request_license` لطلب تمديد",
+                "🔒 **الترخيص منتهي الصلاحية**\n\nاستخدم `/request_license` لطلب تمديد الترخيص",
                 parse_mode='Markdown'
             )
             return
     else:
         await update.message.reply_text(
-            "🔒 **لا يوجد ترخيص**\n\nاستخدم `/request_license` لطلب ترخيص",
+            "🔒 **لا يوجد ترخيص نشط**\n\nاستخدم `/request_license` لطلب ترخيص جديد",
             parse_mode='Markdown'
         )
         return
     
     # Check if file is available
     if not CURRENT_FILE.get('file_id'):
-        await update.message.reply_text("❌ **التطبيق غير متاح حالياً**\nيرجى المحاولة لاحقاً", parse_mode='Markdown')
+        await update.message.reply_text("❌ **التطبيق غير متاح حالياً**\n\nيرجى المحاولة لاحقاً أو التواصل مع الإدارة", parse_mode='Markdown')
         return
     
     try:
@@ -331,17 +377,17 @@ async def get_datrix_app(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await context.bot.send_document(
             chat_id=update.effective_chat.id,
             document=CURRENT_FILE['file_id'],
-            caption=f"✅ **{CURRENT_FILE['filename']}**\n🔢 **الإصدار:** {CURRENT_FILE['version']}\n💾 **الحجم:** {CURRENT_FILE['size']}"
+            caption=f"✅ **{CURRENT_FILE['filename']}**\n\n🔢 **الإصدار:** {CURRENT_FILE['version']}\n💾 **الحجم:** {CURRENT_FILE['size']}\n📅 **تاريخ الرفع:** {CURRENT_FILE['upload_date']}\n\n🚀 **استمتع باستخدام DATRIX!**"
         )
         
         # Track download
         db.track_download(user.id)
         
-        logger.info(f"✅ DATRIX delivered to user {user.id}")
+        logger.info(f"✅ DATRIX delivered to user {user.id} ({user.username})")
         
     except Exception as e:
-        logger.error(f"Error delivering file: {e}")
-        await update.message.reply_text("❌ **خطأ في التحميل**\nيرجى المحاولة مرة أخرى", parse_mode='Markdown')
+        logger.error(f"Error delivering file to {user.id}: {e}")
+        await update.message.reply_text("❌ **خطأ في التحميل**\n\nيرجى المحاولة مرة أخرى أو التواصل مع الإدارة", parse_mode='Markdown')
 
 # Admin commands
 async def set_file_waiting(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -357,7 +403,7 @@ async def set_file_waiting(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     await update.message.reply_text(
         f"✅ **جاهز لاستقبال ملف DATRIX {version}**\n\n"
-        f"📤 ارسل الملف الآن وسيتم حفظه تلقائياً",
+        f"📤 أرسل الملف الآن وسيتم حفظه تلقائياً",
         parse_mode='Markdown'
     )
 
@@ -395,40 +441,16 @@ async def handle_file_upload(update: Update, context: ContextTypes.DEFAULT_TYPE)
             f"📄 **الملف:** {CURRENT_FILE['filename']}\n"
             f"🔢 **الإصدار:** {CURRENT_FILE['version']}\n"
             f"💾 **الحجم:** {CURRENT_FILE['size']}\n"
-            f"📅 **التاريخ:** {CURRENT_FILE['upload_date']}\n\n"
-            f"🚀 **الملف متاح الآن للمستخدمين!**",
+            f"📅 **تاريخ الرفع:** {CURRENT_FILE['upload_date']}\n\n"
+            f"🚀 **الملف متاح الآن للمستخدمين المرخصين!**",
             parse_mode='Markdown'
         )
         
-        logger.info(f"✅ Admin uploaded new file: {CURRENT_FILE['filename']}")
+        logger.info(f"✅ Admin uploaded new file: {CURRENT_FILE['filename']} ({CURRENT_FILE['version']})")
         
     except Exception as e:
         logger.error(f"Error handling file upload: {e}")
         await update.message.reply_text("❌ **خطأ في حفظ الملف**", parse_mode='Markdown')
-
-async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if str(update.effective_user.id) == ADMIN_CHAT_ID:
-        help_text = """🔧 **أوامر المشرف:**
-• `/set_file [version]` - تحضير لرفع ملف جديد
-• `/current_file` - معلومات الملف الحالي
-• `/stats` - إحصائيات سريعة
-
-**أوامر المستخدمين:**
-• `/start` - البداية
-• `/register_company` - تسجيل الشركة  
-• `/request_license` - طلب ترخيص
-• `/my_status` - حالة الحساب
-• `/datrix_app` - تحميل التطبيق"""
-    else:
-        help_text = """🤖 **مساعدة DATRIX Bot**
-• `/start` - رسالة الترحيب
-• `/register_company` - تسجيل الشركة
-• `/request_license` - طلب ترخيص
-• `/my_status` - حالة حسابك
-• `/datrix_app` - تحميل التطبيق
-• `/help` - هذه المساعدة"""
-    
-    await update.message.reply_text(help_text, parse_mode='Markdown')
 
 async def current_file_info(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Show current file info (admin only)"""
@@ -437,15 +459,93 @@ async def current_file_info(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     if CURRENT_FILE.get('file_id'):
         info = f"""📁 **معلومات الملف الحالي:**
-📄 **الملف:** {CURRENT_FILE['filename']}
+
+📄 **اسم الملف:** {CURRENT_FILE['filename']}
 🔢 **الإصدار:** {CURRENT_FILE['version']}
 💾 **الحجم:** {CURRENT_FILE['size']}
-📅 **التاريخ:** {CURRENT_FILE['upload_date']}
-✅ **الحالة:** متاح للتحميل"""
+📅 **تاريخ الرفع:** {CURRENT_FILE['upload_date']}
+🆔 **File ID:** `{CURRENT_FILE['file_id'][:20]}...`
+
+✅ **الحالة:** متاح للتحميل من قبل المستخدمين المرخصين"""
     else:
-        info = "❌ **لا يوجد ملف محفوظ حالياً**\n\nاستخدم `/set_file` لرفع ملف جديد"
+        info = "❌ **لا يوجد ملف محفوظ حالياً**\n\nاستخدم `/set_file [version]` ثم أرسل الملف لرفع نسخة جديدة"
     
     await update.message.reply_text(info, parse_mode='Markdown')
+
+async def admin_stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Show admin statistics"""
+    if str(update.effective_user.id) != ADMIN_CHAT_ID:
+        return
+    
+    try:
+        stats = db.get_basic_stats()
+        
+        stats_msg = f"""📊 **إحصائيات DATRIX Bot**
+
+👥 **المستخدمين:**
+• إجمالي المستخدمين: {stats['total_users']}
+• نشط (24 ساعة): {stats['active_users']}
+• لديهم تراخيص نشطة: {stats['licensed_users']}
+
+📦 **التحميلات:**
+• إجمالي التحميلات: {stats['downloads_today']}
+
+📁 **الملف الحالي:**
+• الإصدار: {CURRENT_FILE.get('version', 'غير محدد')}
+• الحالة: {'✅ متاح' if CURRENT_FILE.get('file_id') else '❌ غير متاح'}
+
+📅 **التاريخ:** {datetime.now().strftime('%Y-%m-%d %H:%M')}"""
+        
+        await update.message.reply_text(stats_msg, parse_mode='Markdown')
+        
+    except Exception as e:
+        logger.error(f"Error getting admin stats: {e}")
+        await update.message.reply_text("❌ خطأ في جلب الإحصائيات")
+
+async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if str(update.effective_user.id) == ADMIN_CHAT_ID:
+        help_text = """🔧 **أوامر المشرف:**
+
+**إدارة الملفات:**
+• `/set_file [version]` - تحضير لرفع ملف جديد
+• `/current_file` - معلومات الملف الحالي
+
+**إحصائيات:**
+• `/admin_stats` - إحصائيات مفصلة
+
+**أوامر المستخدمين:**
+• `/start` - رسالة الترحيب والتسجيل
+• `/register_company` - تسجيل الشركة  
+• `/request_license` - طلب ترخيص جديد
+• `/my_status` - حالة الحساب والترخيص
+• `/datrix_app` - تحميل التطبيق
+• `/help` - عرض هذه المساعدة"""
+    else:
+        help_text = """🤖 **مساعدة DATRIX Bot**
+
+**الأوامر المتاحة:**
+• `/start` - رسالة الترحيب والتسجيل
+• `/register_company` - تسجيل بيانات الشركة
+• `/request_license` - طلب ترخيص جديد
+• `/my_status` - عرض حالة حسابك
+• `/datrix_app` - تحميل تطبيق DATRIX
+• `/help` - عرض هذه المساعدة
+
+**خطوات البدء:**
+1. استخدم `/register_company` لتسجيل شركتك
+2. استخدم `/request_license` لطلب ترخيص
+3. بعد الموافقة، حمل التطبيق بـ `/datrix_app`
+
+**المميزات:**
+• ⚡ تحميل فوري مباشرة من البوت
+• 🔐 نظام تراخيص آمن
+• 📊 تتبع الاستخدام
+• 🌐 متاح 24/7
+
+**تحتاج مساعدة؟**
+تواصل مع فريق الدعم إذا واجهت أي مشاكل."""
+    
+    await update.message.reply_text(help_text, parse_mode='Markdown')
 
 # =================== MAIN FUNCTION ===================
 
@@ -457,7 +557,7 @@ def main():
         # Create Telegram application
         application = Application.builder().token(BOT_TOKEN).build()
         
-        # Add handlers
+        # Add user handlers
         application.add_handler(CommandHandler("start", start))
         application.add_handler(CommandHandler("register_company", register_company))
         application.add_handler(CommandHandler("request_license", request_license))
@@ -465,21 +565,22 @@ def main():
         application.add_handler(CommandHandler("datrix_app", get_datrix_app))
         application.add_handler(CommandHandler("help", help_command))
         
-        # Admin commands
+        # Add admin handlers
         application.add_handler(CommandHandler("set_file", set_file_waiting))
         application.add_handler(CommandHandler("current_file", current_file_info))
+        application.add_handler(CommandHandler("admin_stats", admin_stats))
         
-        # File upload handler
+        # File upload handler (admin only)
         application.add_handler(MessageHandler(filters.Document.ALL, handle_file_upload))
         
-        # Callback handler
+        # Callback handler for license approval
         application.add_handler(CallbackQueryHandler(callback_query_handler))
         
         print("🚀 DATRIX Bot + Web Dashboard Starting...")
         print(f"🤖 Bot Token: {BOT_TOKEN[:10]}...")
         print(f"👤 Admin ID: {ADMIN_CHAT_ID}")
         print(f"🌐 Web User: {WEB_USER}")
-        print("✅ System ready!")
+        print("✅ Clean system ready (no broadcast functionality)!")
         
         # Start bot in a thread
         def run_bot():
