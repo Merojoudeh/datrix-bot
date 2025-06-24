@@ -1,5 +1,5 @@
 # database.py
-# VERSION 2.1: The Phoenix Protocol (Stage 1 - Self-Repair)
+# VERSION 2.0: Aegis Protocol (Final, Clean State)
 
 import os
 import psycopg2
@@ -20,34 +20,11 @@ def get_db_connection():
         logger.critical(f"DATABASE: CRITICAL ERROR connecting to PostgreSQL: {e}")
         raise
 
-# --- PHOENIX PROTOCOL MIGRATION ---
-def run_phoenix_migration(conn):
-    """
-    A one-time self-repair script. It checks for the incorrect column name
-    and renames it, allowing the bot to rise from the ashes of a schema error.
-    """
-    with conn.cursor() as cur:
-        # Check if the incorrect column 'target_audience' exists
-        cur.execute("""
-            SELECT 1 FROM information_schema.columns 
-            WHERE table_name='broadcast_queue' AND column_name='target_audience';
-        """)
-        if cur.fetchone():
-            logger.warning("PHOENIX PROTOCOL: Dissonance detected. Reforging Citadel schema...")
-            cur.execute("ALTER TABLE broadcast_queue RENAME COLUMN target_audience TO target_group;")
-            conn.commit()
-            logger.info("PHOENIX PROTOCOL: Citadel schema reforged. Dissonance corrected.")
-        else:
-            logger.info("PHOENIX PROTOCOL: Schema already in harmony. No action needed.")
-
 # --- Schema Initialization ---
 def initialize_database():
     """Initializes the database tables if they don't exist."""
     conn = get_db_connection()
     try:
-        # --- EXECUTE THE PHOENIX PROTOCOL ---
-        run_phoenix_migration(conn)
-        
         with conn.cursor() as cur:
             # Users table
             cur.execute("""
@@ -83,9 +60,7 @@ def initialize_database():
     finally:
         conn.close()
 
-# --- ALL OTHER FUNCTIONS REMAIN THE SAME ---
-# (User Management, File Submission, Broadcasts, etc.)
-
+# --- User Management ---
 def add_user(user_id, user_name):
     conn = get_db_connection()
     try:
