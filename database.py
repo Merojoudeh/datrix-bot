@@ -64,7 +64,7 @@ def initialize_simple_database():
         conn.close()
 
 def add_or_update_user(telegram_id, user_name, first_name=None):
-    """Add or update user"""
+    """Add or update user - simplified"""
     conn = get_db_connection()
     if not conn:
         return False
@@ -72,14 +72,13 @@ def add_or_update_user(telegram_id, user_name, first_name=None):
     try:
         with conn.cursor() as cur:
             cur.execute("""
-                INSERT INTO datrix_users (telegram_id, user_name, first_name, last_seen)
-                VALUES (%s, %s, %s, NOW())
+                INSERT INTO datrix_users (telegram_id, user_name, last_seen)
+                VALUES (%s, %s, NOW())
                 ON CONFLICT (telegram_id) 
                 DO UPDATE SET 
                     user_name = EXCLUDED.user_name,
-                    first_name = EXCLUDED.first_name,
                     last_seen = NOW()
-            """, (telegram_id, user_name, first_name))
+            """, (telegram_id, user_name or first_name))
             
             conn.commit()
             return True
@@ -88,7 +87,7 @@ def add_or_update_user(telegram_id, user_name, first_name=None):
         return False
     finally:
         conn.close()
-
+        
 def update_user_company(telegram_id, company_name, google_sheet_id):
     """Update user company info"""
     conn = get_db_connection()
