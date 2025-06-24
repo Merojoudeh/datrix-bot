@@ -200,81 +200,47 @@ def track_download(telegram_id):
         conn.close()
 
 def get_all_datrix_users():
-    """Get all users for dashboard"""
+    """Get all users for dashboard - fixed version"""
     conn = get_db_connection()
     if not conn:
         return []
         
     try:
         with conn.cursor() as cur:
-            # First check what columns exist
             cur.execute("""
-                SELECT column_name 
-                FROM information_schema.columns 
-                WHERE table_name = 'datrix_users'
+                SELECT 
+                    telegram_id,
+                    user_name,
+                    company_name,
+                    google_sheet_id,
+                    license_expires,
+                    license_status,
+                    app_version,
+                    download_count,
+                    created_at,
+                    last_seen,
+                    CASE 
+                        WHEN license_expires > CURRENT_DATE THEN true 
+                        ELSE false 
+                    END as is_app_user
+                FROM datrix_users
+                ORDER BY last_seen DESC NULLS LAST
             """)
-            
-            columns = [row[0] for row in cur.fetchall()]
-            has_first_name = 'first_name' in columns
-            
-            # Build query based on available columns
-            if has_first_name:
-                cur.execute("""
-                    SELECT 
-                        du.telegram_id,
-                        du.user_name,
-                        du.first_name,
-                        du.company_name,
-                        du.google_sheet_id,
-                        du.license_expires,
-                        du.license_status,
-                        du.app_version,
-                        du.download_count,
-                        du.created_at,
-                        du.last_seen,
-                        CASE 
-                            WHEN du.license_expires > CURRENT_DATE THEN true 
-                            ELSE false 
-                        END as is_app_user
-                    FROM datrix_users du
-                    ORDER BY du.last_seen DESC NULLS LAST
-                """)
-            else:
-                cur.execute("""
-                    SELECT 
-                        du.telegram_id,
-                        du.user_name,
-                        NULL as first_name,
-                        du.company_name,
-                        du.google_sheet_id,
-                        du.license_expires,
-                        du.license_status,
-                        du.app_version,
-                        du.download_count,
-                        du.created_at,
-                        du.last_seen,
-                        CASE 
-                            WHEN du.license_expires > CURRENT_DATE THEN true 
-                            ELSE false 
-                        END as is_app_user
-                    FROM datrix_users du
-                    ORDER BY du.last_seen DESC NULLS LAST
-                """)
             
             users = []
             for row in cur.fetchall():
                 users.append({
                     'telegram_id': row[0],
-                    'user_name': row[1] or row[2] or 'Unknown',  # user_name or first_name or Unknown
-                    'company_name': row[3],
-                    'google_sheet_id': row[4],
-                    'license_expires': row[5],
-                    'license_status': row[6],
-                    'app_version': row[7],
-                    'total_downloads': row[8],
-                    'created_at': row[9],
-                    'last_seen': row[10],
-                    'is_app_user': row[11]
+                    'user_name': row[1] or 'Unknown',
+                    'company_name': row[2],
+                    'google_sheet_id': row[3],
+                    'license_expires': row[4],
+                    'license_status': row[5],
+                    'app_version': row[6],
+                    'total_downloads': row[7],
+                    'created_at': row[8],
+                    'last_seen': row[9],
+                    'is_app_user': row[10]
                 })
             
             return users
