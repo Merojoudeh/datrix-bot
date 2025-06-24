@@ -16,20 +16,69 @@ def get_db_connection():
         logger.error(f"Database connection failed: {e}")
         return None
 
-def initialize_simple_database():
-    """Initialize only essential tables"""
+def fix_database_schema():
+    """Fix missing columns in existing database"""
     conn = get_db_connection()
     if not conn:
         return False
     
     try:
         with conn.cursor() as cur:
-            # Main users table - WITHOUT first_name
+            # Check if first_name column exists
+            cur.execute("""
+                SELECT column_name 
+                FROM information_schema.columns 
+                WHERE table_name = 'datrix_users' AND column_name = 'first_name'
+            """)
+            
+            if not cur.fetchone():
+                # Add first_name column if it doesn't exist
+                cur.execute("ALTER TABLE datrix_users ADD COLUMN first_name TEXT")
+                logger.info("✅ Added first_name column")
+            
+            # Check other missing columns
+            missing_columns = [
+                ('license_status', 'TEXT DEFAULT \'active\''),
+                ('app_version', 'TEXT'),
+            ]
+            
+            for col_name, col_def in missing_columns:
+                cur.execute(f"""
+                    SELECT column_name 
+                    FROM information_schema.columns 
+                    WHERE table_name = 'datrix_users' AND column_name = '{col_name}'
+                """)
+                
+                if not cur.fetchone():
+                    cur.execute(f"ALTER TABLE datrix_users ADD COLUMN {col_name} {col_def}")
+                    logger.info(f"✅ Added {col_name} column")
+            
+            conn.commit()
+            logger.info("✅ Database schema fixed successfully")
+            return True
+            
+    except Exception as e:
+        logger.error(f"Error fixing database schema: {e}")
+        conn.rollback()
+        return False
+    finally:
+        conn.close()
+
+def initialize_simple_database():
+    """Initialize database and fix schema issues"""
+    conn = get_db_connection()
+    if not conn:
+        return False
+    
+    try:
+        with conn.cursor() as cur:
+            # Create table with all columns
             cur.execute("""
                 CREATE TABLE IF NOT EXISTS datrix_users (
                     id SERIAL PRIMARY KEY,
                     telegram_id BIGINT UNIQUE NOT NULL,
                     user_name TEXT,
+                    first_name TEXT,
                     company_name TEXT,
                     google_sheet_id TEXT,
                     license_expires DATE,
@@ -41,7 +90,7 @@ def initialize_simple_database():
                 );
             """)
             
-            # Simple activity log
+            # Create activity table
             cur.execute("""
                 CREATE TABLE IF NOT EXISTS user_activity (
                     id SERIAL PRIMARY KEY,
@@ -53,9 +102,13 @@ def initialize_simple_database():
             """)
             
             conn.commit()
-            logger.info("✅ Clean database initialized")
-            return True
+            logger.info("✅ Database tables created/updated")
             
+        # Fix any missing columns in existing database
+        fix_database_schema()
+        
+        return True
+        
     except Exception as e:
         logger.error(f"Database init failed: {e}")
         return False
@@ -200,50 +253,91 @@ def track_download(telegram_id):
         conn.close()
 
 def get_all_datrix_users():
-    """Get all users for dashboard - FIXED"""
+    """Get all users for dashboard - with fallback"""
     conn = get_db_connection()
     if not conn:
         return []
         
     try:
         with conn.cursor() as cur:
-            cur.execute("""
-                SELECT 
-                    telegram_id,
-                    user_name,
-                    company_name,
-                    google_sheet_id,
-                    license_expires,
-                    license_status,
-                    app_version,
-                    download_count,
-                    created_at,
-                    last_seen,
-                    CASE 
-                        WHEN license_expires > CURRENT_DATE THEN true 
-                        ELSE false 
-                    END as is_app_user
-                FROM datrix_users
-                ORDER BY last_seen DESC NULLS LAST
-            """)
-            
-            users = []
-            for row in cur.fetchall():
-                users.append({
-                    'telegram_id': row[0],
-                    'user_name': row[1] or f'User_{row[0]}',
-                    'company_name': row[2],
-                    'google_sheet_id': row[3],
-                    'license_expires': row[4],
-                    'license_status': row[5],
-                    'app_version': row[6],
-                    'total_downloads': row[7],
-                    'created_at': row[8],
-                    'last_seen': row[9],
-                    'is_app_user': row[10]
-                })
-            
-            return users
+            # Try with first_name first
+            try:
+                cur.execute("""
+                    SELECT 
+                        telegram_id,
+                        user_name,
+                        first_name,
+                        company_name,
+                        google_sheet_id,
+                        license_expires,
+                        COALESCE(license_status, 'active') as license_status,
+                        app_version,
+                        download_count,
+                        created_at,
+                        last_seen,
+                        CASE 
+                            WHEN license_expires > CURRENT_DATE THEN true 
+                            ELSE false 
+                        END as is_app_user
+                    FROM datrix_users
+                    ORDER BY last_seen DESC NULLS LAST
+                """)
+                
+                users = []
+                for row in cur.fetchall():
+                    users.append({
+                        'telegram_id': row[0],
+                        'user_name': row[1] or row[2] or f'User_{row[0]}',  # user_name or first_name
+                        'company_name': row[3],
+                        'google_sheet_id': row[4],
+                        'license_expires': row[5],
+                        'license_status': row[6],
+                        'app_version': row[7],
+                        'total_downloads': row[8],
+                        'created_at': row[9],
+                        'last_seen': row[10],
+                        'is_app_user': row[11]
+                    })
+                return users
+                
+            except Exception as column_error:
+                # Fallback without first_name if column doesn't exist
+                logger.warning(f"Using fallback query: {column_error}")
+                cur.execute("""
+                    SELECT 
+                        telegram_id,
+                        user_name,
+                        company_name,
+                        google_sheet_id,
+                        license_expires,
+                        download_count,
+                        created_at,
+                        last_seen,
+                        CASE 
+                            WHEN license_expires > CURRENT_DATE THEN true 
+                            ELSE false 
+                        END as is_app_user
+                    FROM datrix_users
+                    ORDER BY last_seen DESC NULLS LAST
+                """)
+                
+                users = []
+                for row in cur.fetchall():
+                    users.append({
+                        'telegram_id': row[0],
+                        'user_name': row[1] or f'User_{row[0]}',
+                        'company_name': row[2],
+                        'google_sheet_id': row[3],
+                        'license_expires': row[4],
+                        'license_status': 'active',
+                        'app_version': None,
+                        'total_downloads': row[5],
+                        'created_at': row[6],
+                        'last_seen': row[7],
+                        'is_app_user': row[8]
+                    })
+                return users
+                
     except Exception as e:
         logger.error(f"Error getting users: {e}")
         return []
