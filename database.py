@@ -111,7 +111,7 @@ def update_user_company(telegram_id, company_name, google_sheet_id):
         conn.close()
 
 def get_user_info(telegram_id):
-    """Get user information"""
+    """Get user information - simplified"""
     conn = get_db_connection()
     if not conn:
         return None
@@ -119,7 +119,7 @@ def get_user_info(telegram_id):
     try:
         with conn.cursor() as cur:
             cur.execute("""
-                SELECT telegram_id, user_name, first_name, company_name, 
+                SELECT telegram_id, user_name, company_name, 
                        google_sheet_id, license_expires, download_count, 
                        created_at, last_seen
                 FROM datrix_users 
@@ -131,13 +131,12 @@ def get_user_info(telegram_id):
                 return {
                     'telegram_id': row[0],
                     'user_name': row[1],
-                    'first_name': row[2],
-                    'company_name': row[3],
-                    'google_sheet_id': row[4],
-                    'license_expires': row[5],
-                    'download_count': row[6],
-                    'created_at': row[7],
-                    'last_seen': row[8]
+                    'company_name': row[2],
+                    'google_sheet_id': row[3],
+                    'license_expires': row[4],
+                    'download_count': row[5],
+                    'created_at': row[6],
+                    'last_seen': row[7]
                 }
             return None
     except Exception as e:
