@@ -1,0 +1,1108 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>🌐 DATRIX Professional Control Panel</title>
+    <style>
+        :root {
+            --bg-primary: #0f172a;
+            --bg-secondary: #1e293b;
+            --bg-card: #334155;
+            --bg-input: #475569;
+            --text-primary: #f8fafc;
+            --text-secondary: #cbd5e1;
+            --text-muted: #94a3b8;
+            --accent-primary: #3b82f6;
+            --accent-success: #10b981;
+            --accent-danger: #ef4444;
+            --accent-warning: #f59e0b;
+            --accent-info: #06b6d4;
+            --border-color: #475569;
+            --shadow: rgba(0, 0, 0, 0.25);
+            --shadow-lg: rgba(0, 0, 0, 0.4);
+        }
+        
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+            background: linear-gradient(135deg, var(--bg-primary) 0%, #1e1b4b 100%);
+            color: var(--text-primary);
+            min-height: 100vh;
+            line-height: 1.6;
+        }
+        
+        .container {
+            max-width: 1600px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        
+        .header {
+            background: linear-gradient(135deg, var(--accent-primary) 0%, #6366f1 100%);
+            border-radius: 16px;
+            padding: 40px;
+            text-align: center;
+            margin-bottom: 30px;
+            box-shadow: 0 10px 30px var(--shadow-lg);
+        }
+        
+        .header h1 {
+            font-size: 2.5rem;
+            font-weight: 700;
+            margin-bottom: 12px;
+            text-shadow: 0 2px 4px rgba(0,0,0,0.3);
+        }
+        
+        .status-badge {
+            display: inline-flex;
+            align-items: center;
+            padding: 8px 16px;
+            border-radius: 50px;
+            font-weight: 600;
+            font-size: 0.9rem;
+        }
+        
+        .status-online {
+            background: rgba(16, 185, 129, 0.2);
+            border: 2px solid var(--accent-success);
+            color: var(--accent-success);
+        }
+        
+        .status-offline {
+            background: rgba(239, 68, 68, 0.2);
+            border: 2px solid var(--accent-danger);
+            color: var(--accent-danger);
+        }
+        
+        .pulse {
+            animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+        }
+        
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.7; }
+        }
+        
+        .dashboard {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(400px, 1fr));
+            gap: 24px;
+        }
+        
+        .card {
+            background: var(--bg-secondary);
+            border-radius: 16px;
+            padding: 28px;
+            box-shadow: 0 8px 25px var(--shadow);
+            border: 1px solid var(--border-color);
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            position: relative;
+            overflow: hidden;
+        }
+        
+        .card::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 3px;
+            background: linear-gradient(90deg, var(--accent-primary), var(--accent-info));
+        }
+        
+        .card:hover {
+            transform: translateY(-4px);
+            box-shadow: 0 12px 35px var(--shadow-lg);
+        }
+        
+        .card-header {
+            display: flex;
+            align-items: center;
+            margin-bottom: 20px;
+        }
+        
+        .card-icon {
+            width: 40px;
+            height: 40px;
+            border-radius: 10px;
+            background: linear-gradient(135deg, var(--accent-primary), var(--accent-info));
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin-right: 12px;
+            font-size: 1.2rem;
+        }
+        
+        .card h3 {
+            font-size: 1.25rem;
+            font-weight: 600;
+            color: var(--text-primary);
+        }
+        
+        .form-group {
+            margin-bottom: 20px;
+        }
+        
+        .form-label {
+            display: block;
+            font-weight: 600;
+            color: var(--text-primary);
+            margin-bottom: 8px;
+            font-size: 0.9rem;
+        }
+        
+        .form-input {
+            width: 100%;
+            padding: 12px 16px;
+            background: var(--bg-input);
+            border: 2px solid transparent;
+            border-radius: 10px;
+            color: var(--text-primary);
+            font-size: 0.95rem;
+            transition: all 0.3s ease;
+            font-family: 'SF Mono', Consolas, monospace;
+        }
+        
+        .form-input:focus {
+            outline: none;
+            border-color: var(--accent-primary);
+            box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+            background: var(--bg-card);
+        }
+        
+        .form-input::placeholder {
+            color: var(--text-muted);
+        }
+        
+        .input-group {
+            display: flex;
+            gap: 12px;
+            align-items: end;
+        }
+        
+        .btn {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            padding: 12px 24px;
+            border: none;
+            border-radius: 10px;
+            font-weight: 600;
+            font-size: 0.9rem;
+            cursor: pointer;
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            text-decoration: none;
+            min-height: 44px;
+            white-space: nowrap;
+            position: relative;
+            overflow: hidden;
+        }
+        
+        .btn::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: -100%;
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(90deg, transparent, rgba(255,255,255,0.1), transparent);
+            transition: left 0.5s;
+        }
+        
+        .btn:hover::before {
+            left: 100%;
+        }
+        
+        .btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 25px rgba(0,0,0,0.3);
+        }
+        
+        .btn:active {
+            transform: translateY(0);
+        }
+        
+        .btn-primary {
+            background: linear-gradient(135deg, var(--accent-primary), #6366f1);
+            color: white;
+        }
+        
+        .btn-success {
+            background: linear-gradient(135deg, var(--accent-success), #059669);
+            color: white;
+        }
+        
+        .btn-danger {
+            background: linear-gradient(135deg, var(--accent-danger), #dc2626);
+            color: white;
+        }
+        
+        .btn-warning {
+            background: linear-gradient(135deg, var(--accent-warning), #d97706);
+            color: white;
+        }
+        
+        .btn-info {
+            background: linear-gradient(135deg, var(--accent-info), #0891b2);
+            color: white;
+        }
+        
+        .btn-secondary {
+            background: var(--bg-card);
+            color: var(--text-primary);
+            border: 2px solid var(--border-color);
+        }
+        
+        .btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+            transform: none;
+        }
+        
+        .btn-group {
+            display: flex;
+            gap: 12px;
+            flex-wrap: wrap;
+            margin-top: 16px;
+        }
+        
+        .current-value {
+            background: var(--bg-primary);
+            padding: 10px 14px;
+            border-radius: 8px;
+            font-family: 'SF Mono', Consolas, monospace;
+            font-size: 0.85rem;
+            color: var(--text-secondary);
+            margin-top: 8px;
+            border-left: 3px solid var(--accent-primary);
+        }
+        
+        .notification {
+            position: fixed;
+            top: 24px;
+            right: 24px;
+            padding: 16px 24px;
+            border-radius: 12px;
+            color: white;
+            font-weight: 600;
+            z-index: 1000;
+            transform: translateX(400px);
+            transition: transform 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+            box-shadow: 0 10px 25px var(--shadow-lg);
+            max-width: 400px;
+        }
+        
+        .notification.show {
+            transform: translateX(0);
+        }
+        
+        .notification.success { background: var(--accent-success); }
+        .notification.error { background: var(--accent-danger); }
+        .notification.warning { background: var(--accent-warning); }
+        .notification.info { background: var(--accent-info); }
+        
+        .full-width {
+            grid-column: 1 / -1;
+        }
+        
+        .broadcast-textarea {
+            width: 100%;
+            min-height: 120px;
+            padding: 16px;
+            background: var(--bg-input);
+            border: 2px solid transparent;
+            border-radius: 12px;
+            color: var(--text-primary);
+            font-size: 0.95rem;
+            resize: vertical;
+            font-family: inherit;
+        }
+        
+        .broadcast-textarea:focus {
+            outline: none;
+            border-color: var(--accent-primary);
+            box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+        }
+        
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+            gap: 16px;
+            margin: 20px 0;
+        }
+        
+        .stat-card {
+            background: var(--bg-primary);
+            padding: 20px;
+            border-radius: 12px;
+            text-align: center;
+            border: 1px solid var(--border-color);
+        }
+        
+        .stat-number {
+            font-size: 2rem;
+            font-weight: 700;
+            color: var(--accent-primary);
+            margin-bottom: 4px;
+        }
+        
+        .stat-label {
+            color: var(--text-secondary);
+            font-size: 0.85rem;
+            font-weight: 500;
+        }
+        
+        .user-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 20px;
+            background: var(--bg-primary);
+            border-radius: 12px;
+            overflow: hidden;
+        }
+        
+        .user-table th,
+        .user-table td {
+            padding: 12px 16px;
+            text-align: left;
+            border-bottom: 1px solid var(--border-color);
+        }
+        
+        .user-table th {
+            background: var(--bg-card);
+            font-weight: 600;
+            color: var(--text-primary);
+        }
+        
+        .user-table tbody tr:hover {
+            background: var(--bg-card);
+        }
+        
+        .license-status {
+            padding: 4px 8px;
+            border-radius: 6px;
+            font-size: 0.8rem;
+            font-weight: 600;
+        }
+        
+        .license-active {
+            background: rgba(16, 185, 129, 0.2);
+            color: var(--accent-success);
+        }
+        
+        .license-expired {
+            background: rgba(239, 68, 68, 0.2);
+            color: var(--accent-danger);
+        }
+        
+        .license-warning {
+            background: rgba(245, 158, 11, 0.2);
+            color: var(--accent-warning);
+        }
+        
+        .table-container {
+            max-height: 500px;
+            overflow-y: auto;
+            border-radius: 12px;
+            border: 1px solid var(--border-color);
+        }
+        
+        @media (max-width: 768px) {
+            .container { padding: 16px; }
+            .dashboard { grid-template-columns: 1fr; }
+            .header { padding: 30px 20px; }
+            .header h1 { font-size: 2rem; }
+            .input-group { flex-direction: column; align-items: stretch; }
+            .btn-group { flex-direction: column; }
+            .stats-grid { grid-template-columns: repeat(2, 1fr); }
+        }
+        
+        /* Custom scrollbar */
+        ::-webkit-scrollbar { width: 8px; }
+        ::-webkit-scrollbar-track { background: var(--bg-secondary); }
+        ::-webkit-scrollbar-thumb { background: var(--border-color); border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: var(--accent-primary); }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🌐 DATRIX Professional Control Panel</h1>
+            <div id="botStatus">
+                <span class="status-badge status-offline pulse" id="statusBadge">
+                    🔄 Checking Connection...
+                </span>
+            </div>
+        </div>
+        
+        <div class="dashboard">
+            <!-- Analytics Overview -->
+            <div class="card full-width">
+                <div class="card-header">
+                    <div class="card-icon">📊</div>
+                    <h3>Analytics Overview</h3>
+                </div>
+                
+                <div class="stats-grid" id="analyticsGrid">
+                    <div class="stat-card">
+                        <div class="stat-number" id="totalUsers">-</div>
+                        <div class="stat-label">Total Users</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-number" id="activeUsers24h">-</div>
+                        <div class="stat-label">Active (24h)</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-number" id="activeUsers7d">-</div>
+                        <div class="stat-label">Active (7d)</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-number" id="totalDownloads">-</div>
+                        <div class="stat-label">Downloads</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-number" id="licenseRequests">-</div>
+                        <div class="stat-label">License Requests</div>
+                    </div>
+                </div>
+                
+                <div class="btn-group">
+                    <button class="btn btn-info" onclick="loadAnalytics()">🔄 Refresh Analytics</button>
+                    <button class="btn btn-success" onclick="sendAdminCommand('/admin_stats')">📈 Detailed Stats</button>
+                </div>
+            </div>
+            
+            <!-- User Management -->
+            <div class="card full-width">
+                <div class="card-header">
+                    <div class="card-icon">👥</div>
+                    <h3>DATRIX Users Management</h3>
+                </div>
+                
+                <div class="table-container">
+                    <table class="user-table" id="usersTable">
+                        <thead>
+                            <tr>
+                                <th>User</th>
+                                <th>Company</th>
+                                <th>License Status</th>
+                                <th>Last Seen</th>
+                                <th>Downloads</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody id="usersTableBody">
+                            <!-- Users will be loaded here -->
+                        </tbody>
+                    </table>
+                </div>
+                
+                <div class="btn-group">
+                    <button class="btn btn-info" onclick="loadUsers()">🔄 Refresh Users</button>
+                    <button class="btn btn-warning" onclick="exportUsers()">📤 Export CSV</button>
+                </div>
+            </div>
+            
+            <!-- File Management -->
+            <div class="card">
+                <div class="card-header">
+                    <div class="card-icon">📁</div>
+                    <h3>File Management</h3>
+                </div>
+                
+                <div class="form-group">
+                    <label class="form-label">Message ID from Channel</label>
+                    <input type="number" class="form-input" id="messageId" placeholder="Message ID" min="1">
+                </div>
+                
+                <div class="form-group">
+                    <label class="form-label">Version</label>
+                    <input type="text" class="form-input" id="version" placeholder="e.g., v2.1.8" value="v2.1.6">
+                </div>
+                
+                <div class="form-group">
+                    <label class="form-label">File Size</label>
+                    <input type="text" class="form-input" id="fileSize" placeholder="e.g., 125MB" value="100MB">
+                </div>
+                
+                <div class="current-value" id="currentFileInfo">
+                    Current: Loading file information...
+                </div>
+                
+                <div class="btn-group">
+                    <button class="btn btn-success" onclick="updateFileInfo()">🚀 Update File</button>
+                    <button class="btn btn-info" onclick="loadFileInfo()">📋 Check Current</button>
+                </div>
+            </div>
+            
+            <!-- Bot Configuration -->
+            <div class="card">
+                <div class="card-header">
+                    <div class="card-icon">⚙️</div>
+                    <h3>Bot Configuration</h3>
+                </div>
+                
+                <div class="form-group">
+                    <label class="form-label">Bot Token</label>
+                    <div class="input-group">
+                        <input type="password" class="form-input" id="botToken" placeholder="Enter new bot token">
+                        <button class="btn btn-info" onclick="saveBotToken()">💾 Save</button>
+                    </div>
+                    <div class="current-value" id="tokenStatus">Current: 7803291138...</div>
+                </div>
+                
+                <div class="form-group">
+                    <label class="form-label">Admin Chat ID</label>
+                    <div class="input-group">
+                        <input type="text" class="form-input" id="adminId" placeholder="Enter admin ID">
+                        <button class="btn btn-info" onclick="saveAdminId()">💾 Save</button>
+                    </div>
+                    <div class="current-value" id="adminStatus">Current: 811896458</div>
+                </div>
+                
+                <div class="form-group">
+                    <label class="form-label">Storage Channel ID</label>
+                    <div class="input-group">
+                        <input type="text" class="form-input" id="channelId" placeholder="Enter channel ID">
+                        <button class="btn btn-info" onclick="saveChannelId()">💾 Save</button>
+                    </div>
+                    <div class="current-value" id="channelStatus">Current: -1002807912676</div>
+                </div>
+                
+                <div class="btn-group">
+                    <button class="btn btn-success" onclick="testConnection()">🧪 Test Connection</button>
+                    <button class="btn btn-secondary" onclick="loadCurrentSettings()">🔄 Reload</button>
+                </div>
+            </div>
+            
+            <!-- Quick Commands -->
+            <div class="card">
+                <div class="card-header">
+                    <div class="card-icon">⚡</div>
+                    <h3>Quick Commands</h3>
+                </div>
+                
+                <div class="btn-group">
+                    <button class="btn btn-success" onclick="sendAdminCommand('/start')">🚀 Test Start</button>
+                    <button class="btn btn-info" onclick="sendAdminCommand('/help')">❓ Help</button>
+                    <button class="btn btn-warning" onclick="sendAdminCommand('/status')">📊 Bot Status</button>
+                    <button class="btn btn-primary" onclick="sendAdminCommand('/datrix_app')">📦 Test Download</button>
+                </div>
+                
+                <div class="form-group">
+                    <label class="form-label">Custom Command</label>
+                    <div class="input-group">
+                        <input type="text" class="form-input" id="customCommand" placeholder="/your_command">
+                        <button class="btn btn-primary" onclick="sendCustomCommand()">Send</button>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Broadcast System -->
+            <div class="card full-width">
+                <div class="card-header">
+                    <div class="card-icon">📡</div>
+                    <h3>Broadcast System</h3>
+                </div>
+                
+                <div class="form-group">
+                    <label class="form-label">Target Group</label>
+                    <select class="form-input" id="broadcastTarget">
+                        <option value="approved">Licensed Users Only</option>
+                        <option value="all">All Users</option>
+                    </select>
+                </div>
+                
+                <div class="form-group">
+                    <label class="form-label">Broadcast Message</label>
+                    <textarea class="broadcast-textarea" id="broadcastMessage" placeholder="Enter your broadcast message...
+
+Example:
+🎉 New DATRIX version v2.1.8 is now available!
+
+✨ What's new:
+• Improved performance
+• Bug fixes  
+• New features
+• Enhanced security
+
+Download now with /datrix_app
+
+Best regards,
+DATRIX Team"></textarea>
+                </div>
+                
+                <div class="btn-group">
+                    <button class="btn btn-danger" onclick="sendBroadcast()">📡 Send Broadcast</button>
+                    <button class="btn btn-warning" onclick="previewBroadcast()">👀 Preview</button>
+                    <button class="btn btn-secondary" onclick="clearBroadcast()">🗑️ Clear</button>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Notification Toast -->
+    <div id="notification" class="notification">
+        <span id="notificationText"></span>
+    </div>
+    
+    <script>
+        // Enhanced Configuration
+        let CONFIG = {
+            BOT_TOKEN: '7803291138:AAExEBQq9uZhq6X_ncI_c8E2J80-tpZtq8E',
+            ADMIN_CHAT_ID: '811896458',
+            STORAGE_CHANNEL_ID: '-1002807912676'
+        };
+        
+        let users = [];
+        let analytics = {};
+        
+        // Initialize
+        document.addEventListener('DOMContentLoaded', function() {
+            loadConfigFromStorage();
+            updateSettingsDisplay();
+            checkBotStatus();
+            loadAnalytics();
+            loadUsers();
+            loadFileInfo();
+            
+            // Auto-refresh every 60 seconds
+            setInterval(() => {
+                checkBotStatus();
+                loadAnalytics();
+                loadUsers();
+            }, 60000);
+        });
+        
+        // Configuration Management
+        function loadConfigFromStorage() {
+            const stored = localStorage.getItem('datrix_bot_config');
+            if (stored) {
+                try {
+                    CONFIG = JSON.parse(stored);
+                    log('✅ Configuration loaded from storage', 'success');
+                } catch (e) {
+                    log('❌ Error loading stored configuration', 'error');
+                }
+            }
+        }
+        
+        function saveConfigToStorage() {
+            try {
+                localStorage.setItem('datrix_bot_config', JSON.stringify(CONFIG));
+                return true;
+            } catch (e) {
+                return false;
+            }
+        }
+        
+        function updateSettingsDisplay() {
+            document.getElementById('tokenStatus').textContent = 
+                `Current: ${CONFIG.BOT_TOKEN.substr(0, 10)}...`;
+            document.getElementById('adminStatus').textContent = 
+                `Current: ${CONFIG.ADMIN_CHAT_ID}`;
+            document.getElementById('channelStatus').textContent = 
+                `Current: ${CONFIG.STORAGE_CHANNEL_ID}`;
+        }
+        
+        // Bot Status Check
+        async function checkBotStatus() {
+            try {
+                const response = await fetch(`https://api.telegram.org/bot${CONFIG.BOT_TOKEN}/getMe`);
+                const data = await response.json();
+                
+                const statusBadge = document.getElementById('statusBadge');
+                
+                if (data.ok) {
+                    statusBadge.className = 'status-badge status-online pulse';
+                    statusBadge.textContent = `✅ Bot Online: @${data.result.username}`;
+                } else {
+                    statusBadge.className = 'status-badge status-offline pulse';
+                    statusBadge.textContent = '❌ Bot Offline';
+                }
+            } catch (error) {
+                const statusBadge = document.getElementById('statusBadge');
+                statusBadge.className = 'status-badge status-offline pulse';
+                statusBadge.textContent = '❌ Connection Error';
+            }
+        }
+        
+        // Analytics
+        async function loadAnalytics() {
+            try {
+                const response = await fetch('/api/datrix_analytics');
+                if (!response.ok) throw new Error('Failed to fetch analytics');
+                
+                analytics = await response.json();
+                updateAnalyticsDisplay();
+                
+            } catch (error) {
+                console.error('Error loading analytics:', error);
+                showNotification('❌ Failed to load analytics', 'error');
+            }
+        }
+        
+        function updateAnalyticsDisplay() {
+            if (analytics.today_stats) {
+                const stats = analytics.today_stats;
+                document.getElementById('totalUsers').textContent = stats.total_users || '0';
+                document.getElementById('activeUsers24h').textContent = stats.active_users_24h || '0';
+                document.getElementById('activeUsers7d').textContent = stats.active_users_7d || '0';
+                document.getElementById('totalDownloads').textContent = stats.total_downloads || '0';
+                document.getElementById('licenseRequests').textContent = stats.license_requests || '0';
+            }
+        }
+        
+        // User Management
+        async function loadUsers() {
+            try {
+                const response = await fetch('/api/datrix_users');
+                if (!response.ok) throw new Error('Failed to fetch users');
+                
+                users = await response.json();
+                updateUsersTable();
+                
+            } catch (error) {
+                console.error('Error loading users:', error);
+                showNotification('❌ Failed to load users', 'error');
+            }
+        }
+        
+        function updateUsersTable() {
+            const tbody = document.getElementById('usersTableBody');
+            tbody.innerHTML = '';
+            
+            users.forEach(user => {
+                const row = tbody.insertRow();
+                
+                // License status
+                let licenseStatus = '';
+                let licenseClass = '';
+                
+                if (user.days_remaining > 30) {
+                    licenseStatus = `✅ Active (${user.days_remaining}d)`;
+                    licenseClass = 'license-active';
+                } else if (user.days_remaining > 0) {
+                    licenseStatus = `⚠️ Expires Soon (${user.days_remaining}d)`;
+                    licenseClass = 'license-warning';
+                } else {
+                    licenseStatus = '❌ Expired';
+                    licenseClass = 'license-expired';
+                }
+                
+                row.innerHTML = `
+                    <td>
+                        <strong>${user.user_name || 'Unknown'}</strong><br>
+                        <small>ID: ${user.telegram_id}</small>
+                    </td>
+                    <td>
+                        ${user.company_name || 'Not set'}<br>
+                        <small>${user.google_sheet_id ? 'Sheet: ' + user.google_sheet_id.substr(0, 8) + '...' : 'No Sheet'}</small>
+                    </td>
+                    <td>
+                        <span class="license-status ${licenseClass}">${licenseStatus}</span>
+                    </td>
+                    <td>${user.last_seen_formatted}</td>
+                    <td>${user.total_downloads || 0}</td>
+                    <td>
+                        <div class="btn-group" style="margin-top: 0;">
+                            <button class="btn btn-success" style="padding: 6px 12px; font-size: 0.8rem;" onclick="extendLicense(${user.telegram_id}, 30)">+30d</button>
+                            <button class="btn btn-warning" style="padding: 6px 12px; font-size: 0.8rem;" onclick="extendLicense(${user.telegram_id}, 365)">+1y</button>
+                        </div>
+                    </td>
+                `;
+            });
+        }
+        
+        async function extendLicense(userId, days) {
+            try {
+                const response = await fetch('/api/extend_license', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({user_id: userId, days: days})
+                });
+                
+                const result = await response.json();
+                
+                if (response.ok) {
+                    showNotification(`✅ License extended ${days} days!`, 'success');
+                    loadUsers(); // Refresh users
+                } else {
+                    showNotification(`❌ Failed: ${result.error}`, 'error');
+                }
+            } catch (error) {
+                showNotification('❌ Network error', 'error');
+            }
+        }
+        
+        function exportUsers() {
+            const csv = [
+                ['User', 'Company', 'Telegram ID', 'License Expires', 'Last Seen', 'Downloads'].join(','),
+                ...users.map(user => [
+                    user.user_name || '',
+                    user.company_name || '',
+                    user.telegram_id,
+                    user.license_expires_formatted,
+                    user.last_seen_formatted,
+                    user.total_downloads || 0
+                ].join(','))
+            ].join('\n');
+            
+            const blob = new Blob([csv], { type: 'text/csv' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `datrix_users_${new Date().toISOString().split('T')[0]}.csv`;
+            a.click();
+            URL.revokeObjectURL(url);
+            
+            showNotification('📤 Users exported!', 'success');
+        }
+        
+        // File Management
+        async function loadFileInfo() {
+            try {
+                const response = await fetch('/api/file_info?file_key=datrix_app');
+                if (!response.ok) throw new Error('Failed to fetch file info');
+                
+                const fileInfo = await response.json();
+                
+                if (fileInfo.message_id) {
+                    document.getElementById('currentFileInfo').innerHTML = `
+                        Current: <strong>${fileInfo.version}</strong> | 
+                        Size: <strong>${fileInfo.file_size}</strong> | 
+                        Downloads: <strong>${fileInfo.download_count}</strong> |
+                        Message ID: <strong>${fileInfo.message_id}</strong>
+                    `;
+                } else {
+                    document.getElementById('currentFileInfo').textContent = 'No file configured';
+                }
+                
+            } catch (error) {
+                document.getElementById('currentFileInfo').textContent = 'Error loading file info';
+            }
+        }
+        
+        async function updateFileInfo() {
+            const messageId = document.getElementById('messageId').value;
+            const version = document.getElementById('version').value;
+            const fileSize = document.getElementById('fileSize').value;
+            
+            if (!messageId || !version || !fileSize) {
+                showNotification('⚠️ Please fill all fields!', 'warning');
+                return;
+            }
+            
+            try {
+                const response = await fetch('/api/update_file', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({
+                        file_key: 'datrix_app',
+                        message_id: parseInt(messageId),
+                        version: version,
+                        file_size: fileSize
+                    })
+                });
+                
+                const result = await response.json();
+                
+                if (response.ok) {
+                    showNotification('✅ File information updated!', 'success');
+                    loadFileInfo(); // Refresh file info
+                    
+                    // Also send command to bot
+                    const command = `/set_file ${messageId} ${version} ${fileSize}`;
+                    await sendAdminCommand(command, false);
+                } else {
+                    showNotification(`❌ Failed: ${result.error}`, 'error');
+                }
+            } catch (error) {
+                showNotification('❌ Network error', 'error');
+            }
+        }
+        
+        // Bot Configuration
+        function saveBotToken() {
+            const token = document.getElementById('botToken').value.trim();
+            if (!token) {
+                showNotification('⚠️ Please enter a bot token!', 'warning');
+                return;
+            }
+            
+            CONFIG.BOT_TOKEN = token;
+            if (saveConfigToStorage()) {
+                updateSettingsDisplay();
+                showNotification('✅ Bot token saved!', 'success');
+                document.getElementById('botToken').value = '';
+            }
+        }
+        
+        function saveAdminId() {
+            const adminId = document.getElementById('adminId').value.trim();
+            if (!adminId) {
+                showNotification('⚠️ Please enter an admin ID!', 'warning');
+                return;
+            }
+            
+            CONFIG.ADMIN_CHAT_ID = adminId;
+            if (saveConfigToStorage()) {
+                updateSettingsDisplay();
+                showNotification('✅ Admin ID saved!', 'success');
+                document.getElementById('adminId').value = '';
+            }
+        }
+        
+        function saveChannelId() {
+            const channelId = document.getElementById('channelId').value.trim();
+            if (!channelId) {
+                showNotification('⚠️ Please enter a channel ID!', 'warning');
+                return;
+            }
+            
+            CONFIG.STORAGE_CHANNEL_ID = channelId;
+            if (saveConfigToStorage()) {
+                updateSettingsDisplay();
+                showNotification('✅ Channel ID saved!', 'success');
+                document.getElementById('channelId').value = '';
+            }
+        }
+        
+        function loadCurrentSettings() {
+            updateSettingsDisplay();
+            showNotification('🔄 Settings reloaded!', 'info');
+        }
+        
+        async function testConnection() {
+            try {
+                const response = await fetch(`https://api.telegram.org/bot${CONFIG.BOT_TOKEN}/getMe`);
+                const data = await response.json();
+                
+                if (data.ok) {
+                    showNotification(`✅ Connected: @${data.result.username}`, 'success');
+                } else {
+                    showNotification('❌ Connection failed!', 'error');
+                }
+            } catch (error) {
+                showNotification('❌ Connection error!', 'error');
+            }
+        }
+        
+        // Broadcast System
+        async function sendBroadcast() {
+            const message = document.getElementById('broadcastMessage').value.trim();
+            const target = document.getElementById('broadcastTarget').value;
+            
+            if (!message) {
+                showNotification('⚠️ Please enter a broadcast message!', 'warning');
+                return;
+            }
+            
+            if (!confirm(`Are you sure you want to send this broadcast to ${target} users?`)) {
+                return;
+            }
+            
+            try {
+                const response = await fetch('/api/broadcast', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({message: message, target: target})
+                });
+                
+                const result = await response.json();
+                
+                if (response.ok) {
+                    showNotification('📡 Broadcast sent!', 'success');
+                    document.getElementById('broadcastMessage').value = '';
+                } else {
+                    showNotification(`❌ Failed: ${result.message}`, 'error');
+                }
+            } catch (error) {
+                showNotification('❌ Network error', 'error');
+            }
+        }
+        
+        function previewBroadcast() {
+            const message = document.getElementById('broadcastMessage').value.trim();
+            const target = document.getElementById('broadcastTarget').value;
+            
+            if (!message) {
+                showNotification('⚠️ Please enter a message to preview!', 'warning');
+                return;
+            }
+            
+            alert(`📡 Broadcast Preview (${target} users):\n\n📢 DATRIX Broadcast\n\n${message}`);
+        }
+        
+        function clearBroadcast() {
+            document.getElementById('broadcastMessage').value = '';
+            showNotification('🗑️ Broadcast cleared!', 'info');
+        }
+        
+        // Command System
+        async function sendAdminCommand(command, showLog = true) {
+            try {
+                const response = await fetch(`https://api.telegram.org/bot${CONFIG.BOT_TOKEN}/sendMessage`, {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({
+                        chat_id: CONFIG.ADMIN_CHAT_ID,
+                        text: command
+                    })
+                });
+                
+                const result = await response.json();
+                
+                if (result.ok && showLog) {
+                    showNotification(`✅ Command sent: ${command}`, 'success');
+                } else if (!result.ok && showLog) {
+                    showNotification('❌ Command failed!', 'error');
+                }
+                
+                return result.ok;
+            } catch (error) {
+                if (showLog) {
+                    showNotification('❌ Command error!', 'error');
+                }
+                return false;
+            }
+        }
+        
+        async function sendCustomCommand() {
+            const command = document.getElementById('customCommand').value.trim();
+            if (!command) {
+                showNotification('⚠️ Please enter a command!', 'warning');
+                return;
+            }
+            
+            await sendAdminCommand(command);
+            document.getElementById('customCommand').value = '';
+        }
+        
+        // Utility Functions
+        function showNotification(message, type = 'info') {
+            const notification = document.getElementById('notification');
+            const notificationText = document.getElementById('notificationText');
+            
+            notification.className = `notification ${type}`;
+            notificationText.textContent = message;
+            
+            notification.classList.add('show');
+            
+            setTimeout(() => {
+                notification.classList.remove('show');
+            }, 4000);
+        }
+        
+        function log(message, type = 'info') {
+            console.log(`[${type.toUpperCase()}] ${message}`);
+        }
+    </script>
+</body>
+</html>
