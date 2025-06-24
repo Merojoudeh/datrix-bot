@@ -723,20 +723,38 @@ def main():
         print(f"🤖 Bot Token: {BOT_TOKEN[:10]}...")
         print(f"👤 Admin ID: {ADMIN_CHAT_ID}")
         print(f"🌐 Web User: {WEB_USER}")
-        print("✅ Clean system ready (no broadcast functionality)!")
+        print("✅ System ready!")
         
-        # Start bot in a thread
-        def run_bot():
-            application.run_polling(drop_pending_updates=True)
+        # Start bot in a separate process using multiprocessing
+        import multiprocessing
+        import asyncio
         
-        bot_thread = threading.Thread(target=run_bot, daemon=True)
-        bot_thread.start()
+        def run_bot_process():
+            """Run bot in separate process"""
+            try:
+                # Create new event loop for this process
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
+                
+                # Run the bot
+                application.run_polling(drop_pending_updates=True)
+            except Exception as e:
+                print(f"❌ Bot process error: {e}")
         
-        # Start web app
-        web_app.run(host='0.0.0.0', port=int(os.environ.get('PORT', 8080)))
+        # Start bot process
+        bot_process = multiprocessing.Process(target=run_bot_process, daemon=True)
+        bot_process.start()
+        
+        # Start web app in main process
+        web_app.run(
+            host='0.0.0.0', 
+            port=int(os.environ.get('PORT', 8080)),
+            debug=False,
+            use_reloader=False
+        )
         
     except Exception as e:
         logger.error(f"Failed to start: {e}")
-
+        
 if __name__ == '__main__':
     main()
