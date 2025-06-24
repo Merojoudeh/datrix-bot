@@ -1,5 +1,5 @@
 # database.py
-# VERSION 2.0: Aegis Protocol Integration
+# VERSION 2.1: The Phoenix Protocol (Stage 1 - Self-Repair)
 
 import os
 import psycopg2
@@ -20,11 +20,34 @@ def get_db_connection():
         logger.critical(f"DATABASE: CRITICAL ERROR connecting to PostgreSQL: {e}")
         raise
 
+# --- PHOENIX PROTOCOL MIGRATION ---
+def run_phoenix_migration(conn):
+    """
+    A one-time self-repair script. It checks for the incorrect column name
+    and renames it, allowing the bot to rise from the ashes of a schema error.
+    """
+    with conn.cursor() as cur:
+        # Check if the incorrect column 'target_audience' exists
+        cur.execute("""
+            SELECT 1 FROM information_schema.columns 
+            WHERE table_name='broadcast_queue' AND column_name='target_audience';
+        """)
+        if cur.fetchone():
+            logger.warning("PHOENIX PROTOCOL: Dissonance detected. Reforging Citadel schema...")
+            cur.execute("ALTER TABLE broadcast_queue RENAME COLUMN target_audience TO target_group;")
+            conn.commit()
+            logger.info("PHOENIX PROTOCOL: Citadel schema reforged. Dissonance corrected.")
+        else:
+            logger.info("PHOENIX PROTOCOL: Schema already in harmony. No action needed.")
+
 # --- Schema Initialization ---
 def initialize_database():
     """Initializes the database tables if they don't exist."""
     conn = get_db_connection()
     try:
+        # --- EXECUTE THE PHOENIX PROTOCOL ---
+        run_phoenix_migration(conn)
+        
         with conn.cursor() as cur:
             # Users table
             cur.execute("""
@@ -43,7 +66,7 @@ def initialize_database():
                     sent_at TIMESTAMP WITH TIME ZONE
                 );
             """)
-            # File submissions table - AEGIS PROTOCOL UPGRADE
+            # File submissions table
             cur.execute("""
                 CREATE TABLE IF NOT EXISTS file_submissions (
                     id SERIAL PRIMARY KEY,
@@ -60,18 +83,16 @@ def initialize_database():
     finally:
         conn.close()
 
-# --- User Management ---
+# --- ALL OTHER FUNCTIONS REMAIN THE SAME ---
+# (User Management, File Submission, Broadcasts, etc.)
+
 def add_user(user_id, user_name):
     conn = get_db_connection()
     try:
         with conn.cursor() as cur:
-            cur.execute(
-                "INSERT INTO users (id, user_name) VALUES (%s, %s) ON CONFLICT (id) DO NOTHING;",
-                (user_id, user_name)
-            )
+            cur.execute("INSERT INTO users (id, user_name) VALUES (%s, %s) ON CONFLICT (id) DO NOTHING;",(user_id, user_name))
             conn.commit()
-    finally:
-        conn.close()
+    finally: conn.close()
 
 def get_user_status(user_id):
     conn = get_db_connection()
@@ -80,8 +101,7 @@ def get_user_status(user_id):
             cur.execute("SELECT status FROM users WHERE id = %s;", (user_id,))
             result = cur.fetchone()
             return result[0] if result else 'unregistered'
-    finally:
-        conn.close()
+    finally: conn.close()
 
 def update_user_status(user_id, status):
     conn = get_db_connection()
@@ -89,72 +109,50 @@ def update_user_status(user_id, status):
         with conn.cursor() as cur:
             cur.execute("UPDATE users SET status = %s WHERE id = %s;", (status, user_id))
             conn.commit()
-    finally:
-        conn.close()
+    finally: conn.close()
 
 def get_user_ids_for_broadcast(target_group):
     conn = get_db_connection()
     try:
         with conn.cursor() as cur:
-            if target_group == 'all':
-                cur.execute("SELECT id FROM users;")
-            else:
-                cur.execute("SELECT id FROM users WHERE status = %s;", (target_group,))
+            if target_group == 'all': cur.execute("SELECT id FROM users;")
+            else: cur.execute("SELECT id FROM users WHERE status = %s;", (target_group,))
             return [row[0] for row in cur.fetchall()]
-    finally:
-        conn.close()
+    finally: conn.close()
 
-# --- File Submission Management ---
 def add_file_submission(user_id, user_name, file_id, file_name, admin_message_id):
-    """Adds a new file submission record. AEGIS PROTOCOL UPGRADE: now includes admin_message_id."""
     conn = get_db_connection()
     try:
         with conn.cursor() as cur:
-            cur.execute(
-                """
-                INSERT INTO file_submissions (user_id, user_name, file_id, file_name, admin_message_id) 
-                VALUES (%s, %s, %s, %s, %s) RETURNING id;
-                """,
-                (user_id, user_name, file_id, file_name, admin_message_id)
-            )
+            cur.execute("INSERT INTO file_submissions (user_id, user_name, file_id, file_name, admin_message_id) VALUES (%s, %s, %s, %s, %s) RETURNING id;",(user_id, user_name, file_id, file_name, admin_message_id))
             submission_id = cur.fetchone()[0]
             conn.commit()
             return submission_id
-    finally:
-        conn.close()
+    finally: conn.close()
 
 def get_submission_details(submission_id):
-    """Retrieves details for a specific submission."""
     conn = get_db_connection()
     try:
         with conn.cursor() as cur:
             cur.execute("SELECT user_id, file_id, file_name, admin_message_id FROM file_submissions WHERE id = %s;", (submission_id,))
             return cur.fetchone()
-    finally:
-        conn.close()
+    finally: conn.close()
 
 def delete_submission(submission_id):
-    """Deletes a submission record from the database."""
     conn = get_db_connection()
     try:
         with conn.cursor() as cur:
             cur.execute("DELETE FROM file_submissions WHERE id = %s;", (submission_id,))
             conn.commit()
-    finally:
-        conn.close()
+    finally: conn.close()
 
-# --- Broadcast Management ---
 def queue_broadcast(target_group, message):
     conn = get_db_connection()
     try:
         with conn.cursor() as cur:
-            cur.execute(
-                "INSERT INTO broadcast_queue (target_group, message) VALUES (%s, %s);",
-                (target_group, message)
-            )
+            cur.execute("INSERT INTO broadcast_queue (target_group, message) VALUES (%s, %s);",(target_group, message))
             conn.commit()
-    finally:
-        conn.close()
+    finally: conn.close()
 
 def get_pending_broadcasts():
     conn = get_db_connection()
@@ -162,8 +160,7 @@ def get_pending_broadcasts():
         with conn.cursor() as cur:
             cur.execute("SELECT id, target_group, message FROM broadcast_queue WHERE sent_at IS NULL;")
             return cur.fetchall()
-    finally:
-        conn.close()
+    finally: conn.close()
 
 def mark_broadcast_as_sent(job_id):
     conn = get_db_connection()
@@ -171,5 +168,4 @@ def mark_broadcast_as_sent(job_id):
         with conn.cursor() as cur:
             cur.execute("UPDATE broadcast_queue SET sent_at = NOW() WHERE id = %s;", (job_id,))
             conn.commit()
-    finally:
-        conn.close()
+    finally: conn.close()
