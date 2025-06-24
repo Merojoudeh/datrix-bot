@@ -1,5 +1,5 @@
 # database.py
-# Clean DATRIX Database (No Broadcast at all)
+# Clean DATRIX Database (Fixed - No first_name column)
 
 import os
 import psycopg2
@@ -24,13 +24,12 @@ def initialize_simple_database():
     
     try:
         with conn.cursor() as cur:
-            # Main users table
+            # Main users table - WITHOUT first_name
             cur.execute("""
                 CREATE TABLE IF NOT EXISTS datrix_users (
                     id SERIAL PRIMARY KEY,
                     telegram_id BIGINT UNIQUE NOT NULL,
                     user_name TEXT,
-                    first_name TEXT,
                     company_name TEXT,
                     google_sheet_id TEXT,
                     license_expires DATE,
@@ -64,13 +63,16 @@ def initialize_simple_database():
         conn.close()
 
 def add_or_update_user(telegram_id, user_name, first_name=None):
-    """Add or update user - simplified"""
+    """Add or update user - no first_name column"""
     conn = get_db_connection()
     if not conn:
         return False
         
     try:
         with conn.cursor() as cur:
+            # Use first_name as user_name if user_name is empty
+            display_name = user_name or first_name or f"User_{telegram_id}"
+            
             cur.execute("""
                 INSERT INTO datrix_users (telegram_id, user_name, last_seen)
                 VALUES (%s, %s, NOW())
@@ -78,7 +80,7 @@ def add_or_update_user(telegram_id, user_name, first_name=None):
                 DO UPDATE SET 
                     user_name = EXCLUDED.user_name,
                     last_seen = NOW()
-            """, (telegram_id, user_name or first_name))
+            """, (telegram_id, display_name))
             
             conn.commit()
             return True
@@ -87,7 +89,7 @@ def add_or_update_user(telegram_id, user_name, first_name=None):
         return False
     finally:
         conn.close()
-        
+
 def update_user_company(telegram_id, company_name, google_sheet_id):
     """Update user company info"""
     conn = get_db_connection()
@@ -111,7 +113,7 @@ def update_user_company(telegram_id, company_name, google_sheet_id):
         conn.close()
 
 def get_user_info(telegram_id):
-    """Get user information - simplified"""
+    """Get user information - no first_name"""
     conn = get_db_connection()
     if not conn:
         return None
@@ -198,7 +200,7 @@ def track_download(telegram_id):
         conn.close()
 
 def get_all_datrix_users():
-    """Get all users for dashboard - fixed version"""
+    """Get all users for dashboard - FIXED"""
     conn = get_db_connection()
     if not conn:
         return []
@@ -229,7 +231,7 @@ def get_all_datrix_users():
             for row in cur.fetchall():
                 users.append({
                     'telegram_id': row[0],
-                    'user_name': row[1] or 'Unknown',
+                    'user_name': row[1] or f'User_{row[0]}',
                     'company_name': row[2],
                     'google_sheet_id': row[3],
                     'license_expires': row[4],
@@ -247,7 +249,7 @@ def get_all_datrix_users():
         return []
     finally:
         conn.close()
-        
+
 def get_basic_stats():
     """Get basic statistics"""
     conn = get_db_connection()
@@ -322,3 +324,5 @@ def log_user_activity(telegram_id, activity_type, activity_data=""):
         return False
     finally:
         conn.close()
+
+# NO BROADCAST FUNCTIONS - COMPLETELY REMOVED
