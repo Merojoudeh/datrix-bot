@@ -56,33 +56,176 @@ def login_required(f):
 @web_app.route('/')
 @login_required
 def dashboard(): 
-    return render_template('dashboard.html')
-
-@web_app.route('/api/datrix_users')
-@login_required
-def api_datrix_users():
+    # Try to load template, fallback to embedded HTML
     try:
-        users = db.get_all_datrix_users()
-        
-        for user in users:
-            if user.get('last_seen'):
-                user['last_seen_formatted'] = user['last_seen'].strftime('%Y-%m-%d %H:%M')
-            else:
-                user['last_seen_formatted'] = 'Never'
+        return render_template('dashboard.html')
+    except:
+        # Embedded dashboard if template not found
+        return """
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <title>DATRIX Control Panel</title>
+            <meta charset="utf-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1">
+            <style>
+                * { margin: 0; padding: 0; box-sizing: border-box; }
+                body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif; background: #f8f9fa; }
+                .container { max-width: 1200px; margin: 0 auto; padding: 20px; }
+                .header { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 30px; border-radius: 12px; margin-bottom: 30px; text-align: center; }
+                .header h1 { font-size: 2.5rem; margin-bottom: 10px; }
+                .header p { opacity: 0.9; font-size: 1.1rem; }
+                .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 20px; margin-bottom: 30px; }
+                .stat { background: white; padding: 25px; border-radius: 12px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); text-align: center; }
+                .stat h3 { font-size: 2rem; margin-bottom: 5px; color: #333; }
+                .stat p { color: #666; font-weight: 500; }
+                .stat.users h3 { color: #3498db; }
+                .stat.active h3 { color: #2ecc71; }
+                .stat.licensed h3 { color: #e74c3c; }
+                .stat.downloads h3 { color: #f39c12; }
+                .section { background: white; border-radius: 12px; padding: 25px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
+                .section h2 { margin-bottom: 20px; color: #333; }
+                .table { width: 100%; border-collapse: collapse; }
+                .table th, .table td { padding: 12px; text-align: left; border-bottom: 1px solid #eee; }
+                .table th { background: #f8f9fa; font-weight: 600; }
+                .table tr:hover { background: #f8f9fa; }
+                .btn { background: #3498db; color: white; border: none; padding: 8px 16px; border-radius: 6px; cursor: pointer; font-size: 14px; }
+                .btn:hover { background: #2980b9; }
+                .btn.success { background: #2ecc71; }
+                .btn.success:hover { background: #27ae60; }
+                .status.active { color: #2ecc71; font-weight: 600; }
+                .status.expired { color: #e74c3c; font-weight: 600; }
+                .loading { text-align: center; padding: 50px; color: #666; }
+            </style>
+        </head>
+        <body>
+            <div class="container">
+                <div class="header">
+                    <h1>🤖 DATRIX Control Panel</h1>
+                    <p>Bot Management & User Analytics Dashboard</p>
+                </div>
                 
-            if user.get('license_expires'):
-                days_remaining = (user['license_expires'] - datetime.now().date()).days
-                user['days_remaining'] = max(0, days_remaining)
-                user['license_expires_formatted'] = user['license_expires'].strftime('%Y-%m-%d')
-            else:
-                user['days_remaining'] = 0
-                user['license_expires_formatted'] = 'Not set'
-        
-        return jsonify(users)
-    except Exception as e:
-        logger.error(f"Error getting users: {e}")
-        return jsonify([])
-
+                <div class="stats">
+                    <div class="stat users">
+                        <h3 id="totalUsers">-</h3>
+                        <p>Total Users</p>
+                    </div>
+                    <div class="stat active">
+                        <h3 id="activeUsers">-</h3>
+                        <p>Active Users (24h)</p>
+                    </div>
+                    <div class="stat licensed">
+                        <h3 id="licensedUsers">-</h3>
+                        <p>Licensed Users</p>
+                    </div>
+                    <div class="stat downloads">
+                        <h3 id="downloads">-</h3>
+                        <p>Total Downloads</p>
+                    </div>
+                </div>
+                
+                <div class="section">
+                    <h2>📋 Users Management</h2>
+                    <div id="usersContainer">
+                        <div class="loading">Loading users data...</div>
+                    </div>
+                </div>
+            </div>
+            
+            <script>
+                // Load stats
+                fetch('/api/bot_stats')
+                    .then(r => r.json())
+                    .then(data => {
+                        document.getElementById('totalUsers').textContent = data.total_users || 0;
+                        document.getElementById('activeUsers').textContent = data.active_users || 0;
+                        document.getElementById('licensedUsers').textContent = data.licensed_users || 0;
+                        document.getElementById('downloads').textContent = data.downloads_today || 0;
+                    })
+                    .catch(e => console.error('Error loading stats:', e));
+                
+                // Load users
+                fetch('/api/datrix_users')
+                    .then(r => r.json())
+                    .then(users => {
+                        const container = document.getElementById('usersContainer');
+                        
+                        if (users.length === 0) {
+                            container.innerHTML = '<div class="loading">No users found</div>';
+                            return;
+                        }
+                        
+                        const table = `
+                            <table class="table">
+                                <thead>
+                                    <tr>
+                                        <th>User ID</th>
+                                        <th>Name</th>
+                                        <th>Company</th>
+                                        <th>License Status</th>
+                                        <th>Downloads</th>
+                                        <th>Last Seen</th>
+                                        <th>Actions</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    ${users.map(user => `
+                                        <tr>
+                                            <td>${user.telegram_id}</td>
+                                            <td>${user.user_name || 'Unknown'}</td>
+                                            <td>${user.company_name || 'Not set'}</td>
+                                            <td class="status ${user.is_app_user ? 'active' : 'expired'}">
+                                                ${user.is_app_user ? '✅ Active' : '❌ Expired'}
+                                            </td>
+                                            <td>${user.total_downloads || 0}</td>
+                                            <td>${user.last_seen_formatted || 'Never'}</td>
+                                            <td>
+                                                <button class="btn" onclick="extendLicense(${user.telegram_id}, 30)">+30d</button>
+                                                <button class="btn success" onclick="extendLicense(${user.telegram_id}, 90)">+90d</button>
+                                            </td>
+                                        </tr>
+                                    `).join('')}
+                                </tbody>
+                            </table>
+                        `;
+                        
+                        container.innerHTML = table;
+                    })
+                    .catch(e => {
+                        console.error('Error loading users:', e);
+                        document.getElementById('usersContainer').innerHTML = '<div class="loading">Error loading users</div>';
+                    });
+                
+                function extendLicense(userId, days) {
+                    if (!confirm(`Extend license for user ${userId} by ${days} days?`)) return;
+                    
+                    fetch('/api/extend_license', {
+                        method: 'POST',
+                        headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify({user_id: userId, days: days})
+                    })
+                    .then(r => r.json())
+                    .then(data => {
+                        if (data.success) {
+                            alert('License extended successfully!');
+                            location.reload();
+                        } else {
+                            alert('Error: ' + (data.error || 'Unknown error'));
+                        }
+                    })
+                    .catch(e => {
+                        alert('Network error: ' + e.message);
+                    });
+                }
+                
+                // Refresh data every 30 seconds
+                setInterval(() => {
+                    location.reload();
+                }, 30000);
+            </script>
+        </body>
+        </html>
+        """
 @web_app.route('/api/extend_license', methods=['POST'])
 @login_required
 def api_extend_license():
