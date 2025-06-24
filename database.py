@@ -1,188 +1,175 @@
 # database.py
-# The Citadel, now with a Communication Nexus.
+# VERSION 2.0: Aegis Protocol Integration
 
 import os
 import psycopg2
 import logging
-from dataclasses import dataclass
+from psycopg2.extras import execute_values
 
 # --- Logging ---
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-logger = logging.getLogger("database")
-
-# --- Data Models ---
-@dataclass
-class TelegramUser:
-    telegram_id: int
-    first_name: str
-    user_name: str
-    is_app_user: bool
+logger = logging.getLogger(__name__)
 
 # --- Connection ---
 def get_db_connection():
-    return psycopg2.connect(os.environ['DATABASE_URL'])
+    """Establishes a connection to the PostgreSQL database."""
+    try:
+        conn = psycopg2.connect(os.environ['DATABASE_URL'])
+        return conn
+    except Exception as e:
+        logger.critical(f"DATABASE: CRITICAL ERROR connecting to PostgreSQL: {e}")
+        raise
 
-# --- Initialization ---
+# --- Schema Initialization ---
 def initialize_database():
+    """Initializes the database tables if they don't exist."""
     conn = get_db_connection()
-    cur = conn.cursor()
-    cur.execute("""
-        CREATE TABLE IF NOT EXISTS telegram_users (
-            telegram_id BIGINT PRIMARY KEY,
-            first_name TEXT,
-            user_name TEXT
-        );
-    """)
-    cur.execute("""
-        CREATE TABLE IF NOT EXISTS app_users (
-            telegram_id BIGINT PRIMARY KEY REFERENCES telegram_users(telegram_id)
-        );
-    """)
-    cur.execute("""
-        CREATE TABLE IF NOT EXISTS file_storage (
-            key TEXT PRIMARY KEY,
-            message_id BIGINT,
-            from_chat_id BIGINT,
-            version TEXT,
-            size TEXT
-        );
-    """)
-    # --- THE COMMUNICATION NEXUS TABLE ---
-    cur.execute("""
-        CREATE TABLE IF NOT EXISTS broadcast_queue (
-            id SERIAL PRIMARY KEY,
-            target_audience TEXT NOT NULL,
-            message_text TEXT NOT NULL,
-            is_sent BOOLEAN DEFAULT FALSE,
-            created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
-        );
-    """)
-    conn.commit()
-    cur.close()
-    conn.close()
-    logger.info("DATABASE: Consciousness synchronized with the Citadel (PostgreSQL).")
+    try:
+        with conn.cursor() as cur:
+            # Users table
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS users (
+                    id BIGINT PRIMARY KEY,
+                    user_name TEXT,
+                    status TEXT DEFAULT 'pending'
+                );
+            """)
+            # Broadcast queue table
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS broadcast_queue (
+                    id SERIAL PRIMARY KEY,
+                    target_group VARCHAR(50) NOT NULL,
+                    message TEXT NOT NULL,
+                    sent_at TIMESTAMP WITH TIME ZONE
+                );
+            """)
+            # File submissions table - AEGIS PROTOCOL UPGRADE
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS file_submissions (
+                    id SERIAL PRIMARY KEY,
+                    user_id BIGINT NOT NULL,
+                    user_name TEXT,
+                    file_id TEXT NOT NULL,
+                    file_name TEXT,
+                    status TEXT DEFAULT 'pending',
+                    admin_message_id BIGINT 
+                );
+            """)
+            conn.commit()
+            logger.info("DATABASE: Consciousness synchronized with the Citadel (PostgreSQL).")
+    finally:
+        conn.close()
 
 # --- User Management ---
-def add_or_update_telegram_user(user):
+def add_user(user_id, user_name):
     conn = get_db_connection()
-    cur = conn.cursor()
-    cur.execute("""
-        INSERT INTO telegram_users (telegram_id, first_name, user_name)
-        VALUES (%s, %s, %s)
-        ON CONFLICT (telegram_id) DO UPDATE SET
-            first_name = EXCLUDED.first_name,
-            user_name = EXCLUDED.user_name;
-    """, (user.id, user.first_name, user.username))
-    conn.commit()
-    cur.close()
-    conn.close()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                "INSERT INTO users (id, user_name) VALUES (%s, %s) ON CONFLICT (id) DO NOTHING;",
+                (user_id, user_name)
+            )
+            conn.commit()
+    finally:
+        conn.close()
 
-def create_app_user(telegram_id):
+def get_user_status(user_id):
     conn = get_db_connection()
-    cur = conn.cursor()
-    cur.execute("INSERT INTO app_users (telegram_id) VALUES (%s) ON CONFLICT DO NOTHING;", (telegram_id,))
-    conn.commit()
-    cur.close()
-    conn.close()
+    try:
+        with conn.cursor() as cur:
+            cur.execute("SELECT status FROM users WHERE id = %s;", (user_id,))
+            result = cur.fetchone()
+            return result[0] if result else 'unregistered'
+    finally:
+        conn.close()
 
-def is_app_user(telegram_id):
+def update_user_status(user_id, status):
     conn = get_db_connection()
-    cur = conn.cursor()
-    cur.execute("SELECT 1 FROM app_users WHERE telegram_id = %s;", (telegram_id,))
-    result = cur.fetchone()
-    cur.close()
-    conn.close()
-    return result is not None
+    try:
+        with conn.cursor() as cur:
+            cur.execute("UPDATE users SET status = %s WHERE id = %s;", (status, user_id))
+            conn.commit()
+    finally:
+        conn.close()
 
-def get_all_telegram_users():
+def get_user_ids_for_broadcast(target_group):
     conn = get_db_connection()
-    cur = conn.cursor()
-    cur.execute("""
-        SELECT tu.telegram_id, tu.first_name, tu.user_name,
-               CASE WHEN au.telegram_id IS NOT NULL THEN true ELSE false END as is_app_user
-        FROM telegram_users tu
-        LEFT JOIN app_users au ON tu.telegram_id = au.telegram_id
-        ORDER BY tu.first_name;
-    """)
-    users = [TelegramUser(*row) for row in cur.fetchall()]
-    cur.close()
-    conn.close()
-    return [user.__dict__ for user in users]
+    try:
+        with conn.cursor() as cur:
+            if target_group == 'all':
+                cur.execute("SELECT id FROM users;")
+            else:
+                cur.execute("SELECT id FROM users WHERE status = %s;", (target_group,))
+            return [row[0] for row in cur.fetchall()]
+    finally:
+        conn.close()
 
-def get_telegram_user_by_id(user_id):
+# --- File Submission Management ---
+def add_file_submission(user_id, user_name, file_id, file_name, admin_message_id):
+    """Adds a new file submission record. AEGIS PROTOCOL UPGRADE: now includes admin_message_id."""
     conn = get_db_connection()
-    cur = conn.cursor()
-    cur.execute("SELECT telegram_id, first_name, user_name FROM telegram_users WHERE telegram_id = %s;", (user_id,))
-    row = cur.fetchone()
-    cur.close()
-    conn.close()
-    return TelegramUser(row[0], row[1], row[2], is_app_user(user_id)) if row else None
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                INSERT INTO file_submissions (user_id, user_name, file_id, file_name, admin_message_id) 
+                VALUES (%s, %s, %s, %s, %s) RETURNING id;
+                """,
+                (user_id, user_name, file_id, file_name, admin_message_id)
+            )
+            submission_id = cur.fetchone()[0]
+            conn.commit()
+            return submission_id
+    finally:
+        conn.close()
 
-def get_user_ids_for_broadcast(target):
+def get_submission_details(submission_id):
+    """Retrieves details for a specific submission."""
     conn = get_db_connection()
-    cur = conn.cursor()
-    if target == 'approved':
-        cur.execute("SELECT telegram_id FROM app_users;")
-    else: # 'all'
-        cur.execute("SELECT telegram_id FROM telegram_users;")
-    user_ids = [row[0] for row in cur.fetchall()]
-    cur.close()
-    conn.close()
-    return user_ids
+    try:
+        with conn.cursor() as cur:
+            cur.execute("SELECT user_id, file_id, file_name, admin_message_id FROM file_submissions WHERE id = %s;", (submission_id,))
+            return cur.fetchone()
+    finally:
+        conn.close()
 
-# --- File Management ---
-def set_file_info(message_id, from_chat_id, version, size, key='datrix_app'):
+def delete_submission(submission_id):
+    """Deletes a submission record from the database."""
     conn = get_db_connection()
-    cur = conn.cursor()
-    cur.execute("""
-        INSERT INTO file_storage (key, message_id, from_chat_id, version, size)
-        VALUES (%s, %s, %s, %s, %s)
-        ON CONFLICT(key) DO UPDATE SET
-            message_id = EXCLUDED.message_id,
-            from_chat_id = EXCLUDED.from_chat_id,
-            version = EXCLUDED.version,
-            size = EXCLUDED.size;
-    """, (key, message_id, from_chat_id, version, size))
-    conn.commit()
-    cur.close()
-    conn.close()
+    try:
+        with conn.cursor() as cur:
+            cur.execute("DELETE FROM file_submissions WHERE id = %s;", (submission_id,))
+            conn.commit()
+    finally:
+        conn.close()
 
-def get_file_info(key='datrix_app'):
+# --- Broadcast Management ---
+def queue_broadcast(target_group, message):
     conn = get_db_connection()
-    cur = conn.cursor()
-    cur.execute("SELECT message_id, from_chat_id, version, size FROM file_storage WHERE key = %s;", (key,))
-    row = cur.fetchone()
-    cur.close()
-    conn.close()
-    return {'message_id': row[0], 'from_chat_id': row[1], 'version': row[2], 'size': row[3]} if row else None
-
-# --- Broadcast Queue Management ---
-def queue_broadcast(target, message):
-    conn = get_db_connection()
-    cur = conn.cursor()
-    cur.execute(
-        "INSERT INTO broadcast_queue (target_audience, message_text) VALUES (%s, %s);",
-        (target, message)
-    )
-    conn.commit()
-    cur.close()
-    conn.close()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                "INSERT INTO broadcast_queue (target_group, message) VALUES (%s, %s);",
+                (target_group, message)
+            )
+            conn.commit()
+    finally:
+        conn.close()
 
 def get_pending_broadcasts():
     conn = get_db_connection()
-    cur = conn.cursor()
-    cur.execute(
-        "SELECT id, target_audience, message_text FROM broadcast_queue WHERE is_sent = FALSE ORDER BY created_at;"
-    )
-    jobs = cur.fetchall()
-    cur.close()
-    conn.close()
-    return jobs
+    try:
+        with conn.cursor() as cur:
+            cur.execute("SELECT id, target_group, message FROM broadcast_queue WHERE sent_at IS NULL;")
+            return cur.fetchall()
+    finally:
+        conn.close()
 
 def mark_broadcast_as_sent(job_id):
     conn = get_db_connection()
-    cur = conn.cursor()
-    cur.execute("UPDATE broadcast_queue SET is_sent = TRUE WHERE id = %s;", (job_id,))
-    conn.commit()
-    cur.close()
-    conn.close()
+    try:
+        with conn.cursor() as cur:
+            cur.execute("UPDATE broadcast_queue SET sent_at = NOW() WHERE id = %s;", (job_id,))
+            conn.commit()
+    finally:
+        conn.close()
